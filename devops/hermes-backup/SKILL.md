@@ -1,182 +1,226 @@
----
-name: hermes-backup
-description: Multi-layer backup strategy for Hermes Agent — GitHub push, local tarball, and Proxmox vzdump scheduling. Covers skills repo, config, vault, and session data.
-version: 1.0.0
-author: Hermes Agent
----
+# Hermes Agent — Backup & Disaster Recovery
 
-# Hermes Backup
+## Overview
 
-Multi-layer backup strategy for Hermes Agent data. Three complementary layers provide redundancy and disaster recovery.
+Three backup layers protect your Hermes Agent setup:
 
-## Layers
-
-| Layer | What | Schedule | Location |
-|-------|------|----------|----------|
-| ☁️ GitHub | Skills repo (121+ skills, SKILL.md + references + scripts) | On backup run | `github.com/monty72/hermes-skills` |
-| 💾 Local tarball | Full Hermes config + vault + CLI tools | Sunday 4am (weekly) | `~/hermes-backups/hermes-full-*.tar.gz` (keep 8) |
-| ⚙️ Proxmox vzdump | VMID 200 (web container) snapshot | Sunday 4am (weekly) | Proxmox `local` storage (keep 4) |
-
-## Backup Script
-
-Located at `~/.hermes/scripts/hermes-backup.sh` (no-agent cron script):
-
-```bash
-#!/bin/bash
-# Hermes full backup - run weekly
-set -e
-
-BACKUP_DIR="/home/matth/hermes-backups"
-mkdir -p "$BACKUP_DIR"
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-BACKUP_FILE="$BACKUP_DIR/hermes-full-$TIMESTAMP.tar.gz"
-SKILLS_REPO="/home/matth/.hermes/skills"
-
-# 1. Push skills to GitHub
-cd "$SKILLS_REPO"
-git add -A
-git commit --allow-empty -m "Auto-backup $TIMESTAMP" 2>/dev/null || true
-git push origin master 2>&1 || echo "Git push failed"
-
-# 2. Create tarball (exclude heavy/generated dirs)
-tar czf "$BACKUP_FILE" \
-  --exclude=".hermes/hermes-agent" \
-  --exclude=".hermes/node_modules" \
-  --exclude=".hermes/skills/.git" \
-  --exclude=".hermes/lsp" \
-  --exclude=".hermes/logs" \
-  --exclude=".hermes/sessions" \
-  --exclude=".hermes/cache" \
-  -C /home/matth .hermes/ .hermes-vault/ .local/bin/hermes-vault
-
-# 3. Prune old backups (keep last 8)
-ls -t "$BACKUP_DIR"/hermes-full-*.tar.gz 2>/dev/null | tail -n +9 | xargs -r rm
-
-echo "Backup complete: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
-```
+| Layer | What | When | Retention |
+|-------|------|------|-----------|
+| ☁️ GitHub | All 121 skills (`monty72/hermes-skills`) | On every backup run | Forever (git history) |
+| 💾 Local tarball | Full `~/.hermes/` + `~/.hermes-vault/` | Sunday 4am | Last 8 |
+| ⚙️ Proxmox vzdump | VMID 200 (web container) snapshot | Sunday 4am | Last 4 |
 
 ## Cron Jobs
 
-Two backup-related cron jobs are registered:
+These are managed via Hermes's built-in cron system (`cronjob` tool or `hermes cron` CLI):
 
-| Job | Schedule | Type | Action |
-|-----|----------|------|--------|
-| `hermes-full-backup` | Sun 4:00 | no-agent script | Runs `hermes-backup.sh` — git push + tarball |
-| `cheapest-model-check` | Daily 8:00 | LLM agent | Checks OpenAI/DSeek for cheaper model, auto-switches |
+| Name | Schedule | Purpose |
+|------|----------|---------|
+| `weekly-gateway-restart` | `0 4 * * 0` (Sun 4am) | Keep gateway healthy |
+| `cheapest-model-check` | `0 8 * * *` (daily 8am) | Auto-switch to cheapest OpenAI model |
+| `hermes-full-backup` | `0 4 * * 0` (Sun 4am) | Push skills to GitHub + create tarball |
 
-The Proxmox vzdump schedule is configured via the Proxmox API (not a Hermes cron job).
+The backup script lives at `~/.hermes/scripts/hermes-backup.sh` (also linked at `~/.local/bin/hermes-backup`).
 
-## Proxmox vzdump Setup
+## Recovery Procedure
 
-```python
-import urllib.request, json, ssl
+### Scenario 1: Container dies, Proxmox snapshot exists
 
-token = "PVEAPIToken=hermes2@pve!api=..."
-base = "https://192.168.1.6:8006/api2/json"
-ctx = ssl._create_unverified_context()
+1. **Restore from Proxmox UI** — Datacenter → Backup → select the hermes-backup job → Restore
+2. **Or via CLI on Proxmox host:**
+   ```bash
+   # List available backups
+   ls -lt /var/lib/vz/dump/
 
-body = json.dumps({
-    "id": "hermes-backup",
-    "schedule": "sun 04:00",
-    "node": "pve1",
-    "vmid": "200",
-    "mode": "snapshot",           # no downtime
-    "storage": "local",            # /var/lib/vz/dump/
-    "compress": "zstd",            # fast compression
-    "prune-backups": "keep-last=4", # keep 4 most recent
-    "enabled": 1,
-}).encode()
+   # Restore the latest
+   pct restore 200 /var/lib/vz/dump/vzdump-lxc-200-*.tar.zst --storage local-lvm
+   pct start 200
+   ```
+3. **Verify** — `hermes doctor` and `hermes gateway status`
 
-req = urllib.request.Request(f"{base}/cluster/backup", data=body,
-    headers={"Authorization": token, "Content-Type": "application/json"})
-urllib.request.urlopen(req, context=ctx, timeout=10)
-```
+### Scenario 2: Full machine loss, need to rebuild from scratch
 
-## What's Included in the Tarball
+#### Step 1: Provision a new machine
 
-| Path | Size | Notes |
-|------|------|-------|
-| `~/.hermes/skills/` | ~16MB | 121 skills, 1,626 files (git-excluded inside tarball) |
-| `~/.hermes/config.yaml` | ~14KB | All settings |
-| `~/.hermes/.env` | ~23KB | Gateway platform tokens |
-| `~/.hermes/.env.local` | ~500B | Vault auto-unlock passphrase + Brave key |
-| `~/.hermes-vault/` | ~16KB | Encrypted API keys (AES-256-GCM) |
-| `~/.local/bin/hermes-vault` | ~12KB | Vault CLI tool |
-| `~/.hermes/state.db` | ~200KB | Session database |
-| **Total** | **~127MB** | After compression |
-
-## What's Excluded
-
-- `~/.hermes/hermes-agent/` — source code (can be reinstalled)
-- `~/.hermes/node_modules/`, `~/.hermes/lsp/` — heavy dev deps
-- `~/.hermes/logs/`, `~/.hermes/sessions/` — transient/temporary
-- `~/.hermes/skills/.git/` — git metadata (redundant with GitHub push)
-
-## Verification
-
-Check backup health:
+Create a Debian 12 LXC via Proxmox (or any Debian/Ubuntu machine):
 
 ```bash
-# List local backups with sizes
-ls -lh ~/hermes-backups/
+# From Proxmox host shell
+pct create 300 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+  --hostname hermes --memory 2048 --swap 512 --cores 2 \
+  --rootfs local-lvm:8 --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  --unprivileged 1 --password '<temp-password>'
+pct start 300
+```
 
-# Test tarball integrity
-tar tzf ~/hermes-backups/hermes-full-*.tar.gz | head -20
+#### Step 2: Install Hermes Agent
 
-# Check GitHub push worked
-cd ~/.hermes/skills
-git log --oneline -5
+```bash
+# SSH into the new container
+ssh root@<new-ip>
 
-# Verify vault passphrase still works
-source ~/.hermes/.env.local
-export PATH="$HOME/.local/bin:$PATH"
+# Install Hermes
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+
+# Verify
+hermes doctor
+```
+
+#### Step 3: Restore skills from GitHub
+
+```bash
+# Remove the default skills (will be replaced)
+rm -rf ~/.hermes/skills
+
+# Clone your backed-up skills
+git clone https://github.com/monty72/hermes-skills.git ~/.hermes/skills
+```
+
+#### Step 4: Restore vault and config
+
+The vault (`~/.hermes-vault/`) and `.env.local` are the most critical files — they contain all API keys.
+
+**If you have a tarball backup:**
+
+```bash
+# Find the latest backup
+ls -lt ~/hermes-backups/
+
+# Extract
+tar xzf ~/hermes-backups/hermes-full-*.tar.gz -C /
+```
+
+**If you have access to the old machine's filesystem:**
+
+```bash
+# Copy from old disk image (if still mounted)
+cp -r /mnt/old-root/home/matth/.hermes-vault/ ~/
+cp /mnt/old-root/home/matth/.hermes/.env.local ~/.hermes/
+```
+
+**If you only have Proxmox vzdump backups:**
+
+```bash
+# Extract the vzdump archive to access vault files
+# Vzdump files are at /var/lib/vz/dump/ on the Proxmox host
+zstdcat /var/lib/vz/dump/vzdump-lxc-200-*.tar.zst | tar xf - \
+  --occurrence ./home/matth/.hermes-vault/ \
+  --occurrence ./home/matth/.hermes/.env.local
+```
+
+#### Step 5: Configure Hermes
+
+```bash
+# Set the model and provider
+hermes config set model.default gpt-5.4-nano
+hermes config set model.provider openai
+hermes config set model.base_url ""
+
+# Set fallback
+# In config.yaml, set:
+# fallback_providers: '[{"provider":"deepseek","model":"deepseek-v4-pro"}]'
+```
+
+#### Step 6: Restore API keys to credential pool
+
+```bash
+# Check vault has the keys
 hermes-vault list
 
-# Check Proxmox backup job exists
-python3 -c "
-import urllib.request, json, ssl, os
-ctx = ssl._create_unverified_context()
-token = os.environ.get('PVE_TOKEN', 'PVEAPIToken=...')
-import urllib.request
-req = urllib.request.Request('https://192.168.1.6:8006/api2/json/cluster/backup',
-    headers={'Authorization': token})
-try:
-    data = json.loads(urllib.request.urlopen(req, context=ctx, timeout=10).read())
-    for j in data.get('data', []):
-        print(f\"Job {j.get('id','')}: schedule={j.get('schedule','')} enabled={j.get('enabled','')}\")
-except Exception as e:
-    print(f'Error: {e}')
-"
+# Reset the credential pool so Hermes re-reads from vault
+hermes auth reset deepseek
 ```
 
-## Recovery
+#### Step 7: Recreate cron jobs
 
-**Full restore from tarball:**
+These need to be set up in a Hermes session using the cronjob tool:
+
+1. **Weekly gateway restart:**
+   - Schedule: `0 4 * * 0`
+   - Action: Restart Hermes gateway via systemd
+
+2. **Daily cheapest-model check:**
+   - Schedule: `0 8 * * *`
+   - Checks OpenAI for cheaper models and auto-switches
+
+3. **Weekly full backup:**
+   - Schedule: `0 4 * * 0`
+   - Script: `hermes-backup.sh` (from the skills repo at `devops/hermes-backup/scripts/hermes-backup.sh`)
+   - `no_agent: true` mode
+
+#### Step 8: Start the gateway
+
 ```bash
-tar xzf ~/hermes-backups/hermes-full-<timestamp>.tar.gz -C ~/
+hermes gateway install   # First time only — installs the systemd service
+hermes gateway start
 ```
 
-**Partial restore (single file):**
+#### Step 9: Verify everything
+
 ```bash
-tar xzf ~/hermes-backups/hermes-full-<timestamp>.tar.gz \
-  -C ~/ .hermes/config.yaml
+hermes doctor
+hermes auth list
+hermes cron list
+hermes gateway status
 ```
 
-After restoring `.env` or `.env.local`, restart the gateway:
+## What's Backed Up
+
+### Included in tarball:
+- `~/.hermes/config.yaml` — all settings
+- `~/.hermes/.env` — API keys (placeholders only, real keys in vault)
+- `~/.hermes/.env.local` — vault passphrase + additional keys
+- `~/.hermes/skills/` (without .git directory)
+- `~/.hermes/auth.json` — credential pool state
+- `~/.hermes/state.db` — session database
+- `~/.hermes-vault/` — encrypted key storage
+- `~/.local/bin/hermes-vault` — vault CLI
+- `~/.ssh/proxmox*` — Proxmox SSH keys
+
+### NOT included in tarball (excluded to save space):
+- `~/.hermes/hermes-agent/` — Hermes source code (reinstallable)
+- `~/.hermes/node_modules/`
+- `~/.hermes/lsp/`
+- `~/.hermes/logs/`
+- `~/.hermes/sessions/`
+- `~/.hermes/cache/`
+
+### In GitHub only:
+- 121 skill files (all SKILL.md + references + scripts + templates)
+- NOT included: vault, credentials, `.env`, `config.yaml`, auth state
+
+## Critical Files
+
+| File | What it does | Backup source |
+|------|-------------|---------------|
+| `~/.hermes-vault/` | All encrypted API keys | Tarball only |
+| `~/.hermes/.env.local` | Vault passphrase + Brave API key | Tarball only |
+| `~/.hermes/.env` | API keys (placeholders) | Tarball |
+| `~/.hermes/config.yaml` | All settings | Tarball |
+| `~/.hermes/auth.json` | Credential pool state | Tarball |
+| `~/.hermes/state.db` | Session history | Tarball |
+
+## Restoring from Scratch — Quick Cheat Sheet
+
 ```bash
-hermes gateway restart
+# 1. Install Hermes
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+
+# 2. Clone skills
+rm -rf ~/.hermes/skills && git clone https://github.com/monty72/hermes-skills.git ~/.hermes/skills
+
+# 3. Extract backup (if you have it)
+# tar xzf ~/hermes-backups/hermes-full-*.tar.gz -C /
+
+# 4. Copy vault + .env.local from backup
+# cp /backup/location/.hermes-vault/ ~/.hermes-vault/ -r
+# cp /backup/location/.hermes/.env.local ~/.hermes/.env.local
+
+# 5. Configure model
+hermes config set model.default gpt-5.4-nano
+hermes config set model.provider openai
+
+# 6. Start gateway
+hermes gateway install
+hermes gateway start
 ```
-
-After restoring the vault, verify keys:
-```bash
-source ~/.hermes/.env.local
-hermes-vault list
-```
-
-## Pitfalls
-
-- **GitHub push protection blocks tokens in commits** — if a skill file contains a real API key, GitHub's secret scanning blocks the push. Use `git filter-branch` or `git rebase -i` to remove the offending commit, then push with `--force` if needed.
-- **Gateway tokens must be real in `.env`** — if you strip `TELEGRAM_BOT_TOKEN`, `HASS_TOKEN`, or `BRAVE_SEARCH_API_KEY` from `.env`, the gateway won't connect. Restore from vault before restarting.
-- **Proxmox upload (multipart) is unreliable for files >50MB** — the `POST /nodes/{node}/storage/{storage}/upload` endpoint has timeout issues with large uploads over API. Use the local tarball as the primary backup and vzdump as the infrastructure-level backup.
-- **No-agent cron scripts must self-source the vault passphrase** — add `source ~/.hermes/.env.local 2>/dev/null` and `export PATH="$HOME/.local/bin:$PATH"` at the top of the script.
-- **The skills repo initial commit may contain secrets** — if any skill file had an inline API key before you noticed, filter-branch it out.
