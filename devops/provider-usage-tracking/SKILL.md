@@ -314,7 +314,9 @@ print(f'Total:  \${input_cost + output_cost:.4f}')
 
 4. **`/usage` only shows the current session.** It does not aggregate across sessions. For cross-session totals, use the log-based method.
 
-5. **Token counts in agent.log are prompt_tokens, not characters.** DeepSeek counts tokens using a proprietary tokenizer — multiplying characters by 0.3-0.4 gives an approximation but exact counts come from the API response.
+5. **`max_completion_tokens` vs `max_tokens` by model family.** OpenAI's o-series, gpt-5.x-nano/mini, and gpt-image models use `max_completion_tokens` instead of `max_tokens`. Using `max_tokens` with these models returns `Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.`. This affects cost estimation — always check model docs for the correct parameter name before scripting token limits.
+
+6. **Token counts in agent.log are prompt_tokens, not characters.** DeepSeek counts tokens using a proprietary tokenizer — multiplying characters by 0.3-0.4 gives an approximation but exact counts come from the API response.
 
 ---
 

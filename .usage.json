@@ -107,14 +107,14 @@
     "archived_at": null,
     "created_at": "2026-05-26T11:41:01.485755+00:00",
     "created_by": null,
-    "last_patched_at": "2026-05-26T17:29:48.170028+00:00",
-    "last_used_at": "2026-05-26T17:29:28.960102+00:00",
-    "last_viewed_at": "2026-05-26T17:29:28.955451+00:00",
-    "patch_count": 9,
+    "last_patched_at": "2026-05-26T17:34:33.609833+00:00",
+    "last_used_at": "2026-05-26T17:34:05.812598+00:00",
+    "last_viewed_at": "2026-05-26T17:34:05.804964+00:00",
+    "patch_count": 13,
     "pinned": false,
     "state": "active",
-    "use_count": 10,
-    "view_count": 10
+    "use_count": 11,
+    "view_count": 11
   },
   "home-assistant-integration": {
     "archived_at": null,
@@ -185,14 +185,14 @@
     "archived_at": null,
     "created_at": "2026-05-24T11:47:33.555203+00:00",
     "created_by": "agent",
-    "last_patched_at": "2026-05-26T12:02:33.005734+00:00",
-    "last_used_at": "2026-05-26T17:07:41.590351+00:00",
-    "last_viewed_at": "2026-05-26T17:07:41.578931+00:00",
-    "patch_count": 12,
+    "last_patched_at": "2026-05-26T17:34:37.639575+00:00",
+    "last_used_at": "2026-05-26T17:34:09.938843+00:00",
+    "last_viewed_at": "2026-05-26T17:34:09.934292+00:00",
+    "patch_count": 13,
     "pinned": false,
     "state": "active",
-    "use_count": 21,
-    "view_count": 21
+    "use_count": 22,
+    "view_count": 22
   },
   "proxmox-health-audit": {
     "archived_at": null,
