@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MISSION CONTROL</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #111118;
+      --bg-card: #161622;
+      --bg-card-hover: #1c1c2e;
+      --border: #2a2a3e;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8888a0;
+      --text-muted: #55556a;
+      --accent: #6c8cff;
+      --accent-dim: #4361ee;
+      --green: #4ade80;
+      --green-dim: #1a3a2a;
+      --red: #f87171;
+      --amber: #fbbf24;
+      --blue: #60a5fa;
+      --purple: #a78bfa;
+      --cyan: #22d3ee;
+      --pink: #f472b6;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    .bg-grid {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background-image:
+        linear-gradient(rgba(108, 140, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(108, 140, 255, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none; z-index: 0;
+    }
+    .bg-glow {
+      position: fixed; top: -30vh; left: -20vw;
+      width: 80vw; height: 80vh;
+      background: radial-gradient(ellipse, rgba(108, 140, 255, 0.06) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+
+    .app { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding: 24px 32px; }
+
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 32px;
+    }
+    .header-left { display: flex; align-items: center; gap: 20px; }
+    .logo {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 800; color: white;
+      box-shadow: 0 0 30px rgba(108, 140, 255, 0.3);
+    }
+    .logo-text { font-size: 20px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+    .logo-text span { color: var(--accent); }
+    .status-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; border-radius: 20px;
+      background: var(--green-dim); border: 1px solid rgba(74, 222, 128, 0.2);
+      font-size: 12px; font-weight: 500; color: var(--green);
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .header-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; font-weight: 500; color: var(--text-secondary);
+      background: var(--bg-card); padding: 6px 16px; border-radius: 8px; border: 1px solid var(--border);
+    }
+
+    .metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 32px; }
+    .metric-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 18px 20px; transition: all 0.2s;
+    }
+    .metric-card:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+    .metric-label { font-size: 11px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .metric-value { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .metric-value.green { color: var(--green); }
+    .metric-value.blue { color: var(--blue); }
+    .metric-value.amber { color: var(--amber); }
+    .metric-value.purple { color: var(--purple); }
+    .metric-value.cyan { color: var(--cyan); }
+    .metric-value.pink { color: var(--pink); }
+    .metric-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 24px; border-bottom: 1px solid var(--border);
+    }
+    .card-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+    .card-title .icon { font-size: 16px; }
+    .card-badge { font-size: 11px; padding: 3px 10px; border-radius: 10px; background: var(--bg-primary); color: var(--text-muted); font-weight: 500; }
+    .card-body { padding: 16px 24px 20px; }
+
+    .agent-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 0; border-bottom: 1px solid rgba(42, 42, 62, 0.5);
+    }
+    .agent-item:last-child { border-bottom: none; }
+    .agent-info { display: flex; align-items: center; gap: 12px; }
+    .agent-avatar {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 600;
+    }
+    .agent-name { font-size: 14px; font-weight: 500; }
+    .agent-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .agent-status { font-size: 12px; padding: 3px 10px; border-radius: 10px; font-weight: 500; }
+    .status-running { background: var(--green-dim); color: var(--green); }
+    .status-idle { background: var(--amber-dim); color: var(--amber); }
+    .status-error { background: var(--red-dim); color: var(--red); }
+
+    .timeline { position: relative; }
+    .timeline::before {
+      content: ''; position: absolute; left: 11px; top: 0; bottom: 0;
+      width: 2px; background: var(--border);
+    }
+    .timeline-item { display: flex; gap: 16px; padding: 10px 0; position: relative; }
+    .timeline-dot {
+      width: 24px; height: 24px; min-width: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; font-size: 11px;
+      position: relative; z-index: 1;
+    }
+    .timeline-dot.green { background: var(--green-dim); color: var(--green); }
+    .timeline-dot.blue { background: rgba(96, 165, 250, 0.2); color: var(--blue); }
+    .timeline-dot.amber { background: var(--amber-dim); color: var(--amber); }
+    .timeline-content { flex: 1; }
+    .timeline-title { font-size: 13px; font-weight: 500; }
+    .timeline-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .timeline-time { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+
+    .sys-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .sys-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px; text-align: center;
+    }
+    .sys-card .icon { font-size: 28px; margin-bottom: 8px; }
+    .sys-card .name { font-size: 13px; font-weight: 500; }
+    .sys-card .uptime { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+    .action-btn {
+      background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px; text-align: center; cursor: pointer;
+      transition: all 0.2s; color: var(--text-secondary);
+      font-size: 12px; font-weight: 500;
+    }
+    .action-btn:hover { border-color: var(--accent); background: var(--bg-card-hover); color: var(--text-primary); }
+    .action-btn .emoji { font-size: 22px; display: block; margin-bottom: 6px; }
+
+    .footer {
+      border-top: 1px solid var(--border); padding: 16px 0;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; color: var(--text-muted);
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate { animation: fadeIn 0.4s ease; }
+
+    @media (max-width: 1024px) {
+      .metrics { grid-template-columns: repeat(3, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .sys-grid { grid-template-columns: repeat(2, 1fr); }
+      .actions { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">MC</div>
+        <div class="logo-text">Mission <span>Control</span></div>
+        <div class="status-badge"><span class="status-dot"></span>All Systems Nominal</div>
+      </div>
+      <div class="header-time" id="headerTime">--:--:-- UTC</div>
+    </header>
+
+    <div class="metrics" id="metrics">
+      <!-- Populated by JS -->
+    </div>
+
+    <div class="sys-grid" id="services">
+      <!-- Populated by JS -->
+    </div>
+
+    <div class="grid-2">
+      <div class="card animate">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">⚡</span> Recent Activity</div>
+          <span class="card-badge">Live</span>
+        </div>
+        <div class="card-body timeline" id="timeline">
+        </div>
+      </div>
+      <div class="card animate">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">🤖</span> Active Agents</div>
+          <span class="card-badge" id="agentCount">0 total</span>
+        </div>
+        <div class="card-body" id="agents"></div>
+      </div>
+    </div>
+
+    <div class="card animate" style="margin-bottom: 32px;">
+      <div class="card-header">
+        <div class="card-title"><span class="icon">🎮</span> Quick Actions</div>
+      </div>
+      <div class="card-body actions" id="actions"></div>
+    </div>
+
+    <footer class="footer">
+      <div id="footerText">Mission Control v1.0</div>
+      <div class="footer-links"></div>
+    </footer>
+  </div>
+
+  <script>
+    // -- CONFIGUREABLE DATA --
+    const CONFIG = {
+      title: "Mission Control",
+      subtitle: "All Systems Nominal",
+      metrics: [
+        { label: "Active Agents", value: "7", color: "green", sub: "▲ 2 today" },
+        { label: "Requests", value: "1.2K", color: "blue", sub: "99.9% success" },
+        { label: "Response Time", value: "210ms", color: "amber", sub: "p95 latency" },
+        { label: "Cron Jobs", value: "12", color: "purple", sub: "4 running now" },
+        { label: "Uptime", value: "99.7%", color: "green", sub: "▲ last 30 days" },
+        { label: "Skills", value: "99", color: "cyan", sub: "+10 this session" },
+      ],
+      services: [
+        { icon: "🖥️", name: "Hermes Core", uptime: "v0.6.0 · up 14h" },
+        { icon: "📡", name: "Telegram Gateway", uptime: "Connected · 210ms" },
+        { icon: "🧠", name: "DeepSeek API", uptime: "deepseek-chat · active" },
+        { icon: "⚡", name: "Subagents", uptime: "3 available · max depth 1" },
+      ],
+      agents: [
+        { name: "Hermes (Main)", desc: "deepseek-chat · Telegram DM", status: "Running", avatar: "H", color: "74, 222, 128" },
+        { name: "Subagent Pool", desc: "3 workers available", status: "Idle", avatar: "S", color: "96, 165, 250" },
+        { name: "Cron Scheduler", desc: "12 jobs · 4 active", status: "Running", avatar: "C", color: "251, 191, 36" },
+        { name: "Gateway Listener", desc: "Telegram · persistent", status: "Running", avatar: "G", color: "34, 211, 238" },
+        { name: "Memory Syncer", desc: "Cross-session persistence", status: "Running", avatar: "M", color: "244, 114, 182" },
+      ],
+      timeline: [
+        { title: "Skills installed", desc: "10 new skills added", time: "just now", color: "green" },
+        { title: "Deploying dashboard", desc: "Building Mission Control", time: "1m ago", color: "blue" },
+        { title: "Session started", desc: "Telegram DM", time: "12m ago", color: "blue" },
+        { title: "Gateway connected", desc: "Telegram platform adapter", time: "2h ago", color: "green" },
+      ],
+      actions: [
+        { emoji: "📋", label: "Copy Logs Command", onclick: "navigator.clipboard.writeText('hermes logs --follow')" },
+        { emoji: "📊", label: "DeepSeek Usage", onclick: "window.open('https://platform.deepseek.com/usage','_blank')" },
+        { emoji: "📖", label: "Hermes Docs", onclick: "window.open('https://hermes-agent.nousresearch.com/docs','_blank')" },
+        { emoji: "💻", label: "GitHub Repo", onclick: "window.open('https://github.com/NousResearch/hermes-agent','_blank')" },
+      ],
+      footer: "Mission Control v1.0 -- built by Hermes Agent",
+    };
+
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('headerTime').textContent = now.toISOString().split('T')[1].split('.')[0] + ' UTC';
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Render metrics
+    const metricsEl = document.getElementById('metrics');
+    CONFIG.metrics.forEach((m, i) => {
+      const el = document.createElement('div');
+      el.className = 'metric-card animate';
+      el.style.animationDelay = `${i * 0.05}s`;
+      el.innerHTML = `<div class="metric-label">${m.label}</div><div class="metric-value ${m.color}">${m.value}</div><div class="metric-sub">${m.sub}</div>`;
+      metricsEl.appendChild(el);
+    });
+
+    // Render services
+    const servicesEl = document.getElementById('services');
+    CONFIG.services.forEach((s, i) => {
+      const el = document.createElement('div');
+      el.className = 'sys-card animate';
+      el.style.animationDelay = `${i * 0.05}s`;
+      el.innerHTML = `<div class="icon">${s.icon}</div><div class="name">${s.name}</div><div class="uptime">${s.uptime}</div>`;
+      servicesEl.appendChild(el);
+    });
+
+    // Render agents
+    const agentsEl = document.getElementById('agents');
+    document.getElementById('agentCount').textContent = `${CONFIG.agents.length} total`;
+    CONFIG.agents.forEach(a => {
+      const el = document.createElement('div');
+      el.className = 'agent-item';
+      el.innerHTML = `
+        <div class="agent-info">
+          <div class="agent-avatar" style="background: rgba(${a.color}, 0.2); color: rgb(${a.color});">${a.avatar}</div>
+          <div><div class="agent-name">${a.name}</div><div class="agent-desc">${a.desc}</div></div>
+        </div>
+        <span class="agent-status status-${a.status.toLowerCase()}">${a.status}</span>`;
+      agentsEl.appendChild(el);
+    });
+
+    // Render timeline
+    const timelineEl = document.getElementById('timeline');
+    CONFIG.timeline.forEach(t => {
+      const el = document.createElement('div');
+      el.className = 'timeline-item';
+      el.innerHTML = `
+        <div class="timeline-dot ${t.color}">✓</div>
+        <div class="timeline-content">
+          <div class="timeline-title">${t.title}</div>
+          <div class="timeline-desc">${t.desc}</div>
+          <div class="timeline-time">${t.time}</div>
+        </div>`;
+      timelineEl.appendChild(el);
+    });
+
+    // Render actions
+    const actionsEl = document.getElementById('actions');
+    CONFIG.actions.forEach(a => {
+      const el = document.createElement('div');
+      el.className = 'action-btn';
+      el.setAttribute('onclick', a.onclick);
+      el.innerHTML = `<span class="emoji">${a.emoji}</span>${a.label}`;
+      actionsEl.appendChild(el);
+    });
+
+    // Footer
+    document.getElementById('footerText').textContent = CONFIG.footer;
+  </script>
+</body>
+</html>

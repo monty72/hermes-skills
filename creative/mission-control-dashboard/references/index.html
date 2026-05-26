@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MISSION CONTROL — Hermes Agent</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    :root {
+      --bg-primary: #08080e; --bg-secondary: #0f0f18; --bg-card: #14141f; --bg-card-hover: #1a1a2a;
+      --border: #22223a; --text-primary: #eeeef5; --text-secondary: #7a7a95; --text-muted: #4a4a60;
+      --accent: #6c8cff; --accent-dim: #3b5ccc;
+      --green: #34d399; --green-dim: #0d2a1d; --red: #f87171; --red-dim: #2a0e0e;
+      --amber: #fbbf24; --amber-dim: #2a2208; --blue: #60a5fa; --purple: #a78bfa; --cyan: #22d3ee; --pink: #f472b6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', sans-serif; min-height: 100vh; overflow-x: hidden; }
+    .bg-grid { position: fixed; inset: 0; background-image: linear-gradient(rgba(108,140,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(108,140,255,0.025) 1px, transparent 1px); background-size: 64px 64px; pointer-events: none; z-index: 0; }
+    .bg-glow { position: fixed; top: -20vh; left: -15vw; width: 70vw; height: 70vh; background: radial-gradient(ellipse, rgba(108,140,255,0.05) 0%, transparent 70%); pointer-events: none; z-index: 0; }
+    .bg-glow-2 { position: fixed; bottom: -25vh; right: -20vw; width: 60vw; height: 60vh; background: radial-gradient(ellipse, rgba(52,211,153,0.035) 0%, transparent 70%); pointer-events: none; z-index: 0; }
+    .app { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding: 24px 32px; }
+    .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 32px; flex-wrap: wrap; gap: 12px; }
+    .header-left { display: flex; align-items: center; gap: 20px; }
+    .logo { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, var(--accent-dim), var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: white; box-shadow: 0 0 30px rgba(108,140,255,0.25); }
+    .logo-text { font-size: 20px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+    .logo-text span { color: var(--accent); }
+    .status-badge { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 20px; background: var(--green-dim); border: 1px solid rgba(52,211,153,0.2); font-size: 12px; font-weight: 500; color: var(--green); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .header-time { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; color: var(--text-secondary); background: var(--bg-card); padding: 6px 16px; border-radius: 8px; border: 1px solid var(--border); }
+    .last-updated { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+    .metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 32px; }
+    .metric-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; transition: all 0.2s; position: relative; overflow: hidden; }
+    .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0; transition: opacity 0.3s; }
+    .metric-card:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+    .metric-card:hover::before { opacity: 1; }
+    .metric-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 6px; }
+    .metric-value { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1.1; }
+    .metric-value.green { color: var(--green); } .metric-value.blue { color: var(--blue); } .metric-value.amber { color: var(--amber); }
+    .metric-value.purple { color: var(--purple); } .metric-value.cyan { color: var(--cyan); } .metric-value.pink { color: var(--pink); }
+    .metric-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+    .metric-sub.up { color: var(--green); } .metric-sub.down { color: var(--red); }
+    .sys-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .sys-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; transition: all 0.2s; }
+    .sys-card:hover { border-color: var(--accent); }
+    .sys-card .icon { font-size: 28px; margin-bottom: 8px; display: block; }
+    .sys-card .name { font-size: 13px; font-weight: 500; }
+    .sys-card .uptime { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .sys-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .sys-indicator.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .sys-indicator.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    .sys-indicator.red { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .sys-indicator.grey { background: var(--text-muted); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: border-color 0.2s; }
+    .card:hover { border-color: rgba(108,140,255,0.3); }
+    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--border); }
+    .card-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+    .card-title .icon { font-size: 16px; }
+    .card-badge { font-size: 11px; padding: 3px 10px; border-radius: 10px; background: var(--bg-primary); color: var(--text-muted); font-weight: 500; }
+    .card-body { padding: 16px 24px 20px; }
+    .timeline { position: relative; }
+    .timeline::before { content: ''; position: absolute; left: 11px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
+    .timeline-item { display: flex; gap: 14px; padding: 8px 0; position: relative; }
+    .timeline-dot { width: 24px; height: 24px; min-width: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; position: relative; z-index: 1; }
+    .timeline-dot.green { background: var(--green-dim); color: var(--green); }
+    .timeline-dot.blue { background: rgba(96,165,250,0.2); color: var(--blue); }
+    .timeline-dot.amber { background: var(--amber-dim); color: var(--amber); }
+    .timeline-dot.red { background: var(--red-dim); color: var(--red); }
+    .timeline-dot.purple { background: rgba(167,139,250,0.2); color: var(--purple); }
+    .timeline-content { flex: 1; }
+    .timeline-title { font-size: 13px; font-weight: 500; }
+    .timeline-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .timeline-time { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+    .agent-item { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid rgba(34,34,58,0.5); }
+    .agent-item:last-child { border-bottom: none; }
+    .agent-info { display: flex; align-items: center; gap: 12px; }
+    .agent-avatar { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+    .agent-name { font-size: 14px; font-weight: 500; }
+    .agent-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .agent-status { font-size: 12px; padding: 3px 10px; border-radius: 10px; font-weight: 500; }
+    .status-running { background: var(--green-dim); color: var(--green); }
+    .status-idle { background: var(--amber-dim); color: var(--amber); }
+    .status-error { background: var(--red-dim); color: var(--red); }
+    .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 8px; }
+    .action-btn { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); font-size: 12px; font-weight: 500; text-decoration: none; display: block; }
+    .action-btn:hover { border-color: var(--accent); background: var(--bg-card-hover); color: var(--text-primary); }
+    .action-btn .emoji { font-size: 22px; display: block; margin-bottom: 6px; }
+    .footer { border-top: 1px solid var(--border); padding: 16px 0; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { color: var(--text-muted); text-decoration: none; }
+    .footer-links a:hover { color: var(--accent); }
+    .animate { animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-primary); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(3, 1fr); } .grid-2 { grid-template-columns: 1fr; } .sys-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .app { padding: 16px; } .metrics { grid-template-columns: repeat(2, 1fr); } .actions { grid-template-columns: repeat(2, 1fr); } .header-time { display: none; } }
+  </style>
+</head>
+<body>
+<div class="bg-grid"></div><div class="bg-glow"></div><div class="bg-glow-2"></div>
+<div class="app">
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">MC</div>
+      <div class="logo-text">Mission <span>Control</span></div>
+      <div class="status-badge"><span class="status-dot"></span><span id="statusText">All Systems Nominal</span></div>
+    </div>
+    <div class="header-right">
+      <span class="last-updated" id="lastUpdated"></span>
+      <span class="header-time" id="headerTime">--:--:-- UTC</span>
+    </div>
+  </header>
+  <div class="metrics" id="metricsContainer">
+    <!-- Dynamic from JS -->
+  </div>
+  <div class="sys-grid" id="sysGrid"></div>
+  <div class="grid-2">
+    <div class="card animate">
+      <div class="card-header"><div class="card-title"><span class="icon">⚡</span> Activity</div><span class="card-badge">Live</span></div>
+      <div class="card-body timeline" id="timeline"></div>
+    </div>
+    <div class="card animate delay-2">
+      <div class="card-header"><div class="card-title"><span class="icon">🤖</span> Agents</div><span class="card-badge" id="agentTotal">-- total</span></div>
+      <div class="card-body" id="agentList"></div>
+    </div>
+  </div>
+  <div class="card animate" style="margin-bottom: 32px;">
+    <div class="card-header"><div class="card-title"><span class="icon">🎮</span> Quick Actions</div></div>
+    <div class="card-body actions">
+      <a class="action-btn" href="https://hermes-agent.nousresearch.com/docs" target="_blank"><span class="emoji">📖</span>Docs</a>
+      <a class="action-btn" href="https://github.com/NousResearch/hermes-agent" target="_blank"><span class="emoji">💻</span>GitHub</a>
+      <a class="action-btn" href="https://platform.deepseek.com/usage" target="_blank"><span class="emoji">📊</span>DeepSeek</a>
+      <a class="action-btn" href="#" onclick="location.reload();return false"><span class="emoji">🔄</span>Refresh</a>
+    </div>
+  </div>
+  <footer class="footer">
+    <div>Mission Control v2.0 — powered by Hermes Agent</div>
+    <div class="footer-links"><a href="https://hermes-agent.nousresearch.com/docs">Docs</a><a href="https://github.com/NousResearch/hermes-agent">GitHub</a></div>
+  </footer>
+</div>
+<script>
+const API = 'https://hermes-mission-control.deno.dev';
+function updateClock() { document.getElementById('headerTime').textContent = new Date().toISOString().split('T')[1].split('.')[0] + ' UTC'; }
+updateClock(); setInterval(updateClock, 1000);
+function fmt(n) { if (n>=1e6) return (n/1e6).toFixed(1)+'M'; if (n>=1e3) return (n/1e3).toFixed(1)+'K'; return n; }
+function render(d) {
+  document.getElementById('statusText').textContent = 'All Systems Nominal';
+  document.getElementById('metricsContainer').innerHTML = [
+    {l:'Active Agents', v:d.activeAgents??7, c:'green', s:`◉ ${d.agentsRunning??5} running`, sc:'up'},
+    {l:'Tokens Used', v:fmt(d.totalTokens??7390658), c:'blue', s:`≈ $${(d.estimatedCost??2.03).toFixed(2)}`, sc:''},
+    {l:'API Calls', v:d.totalApiCalls??139, c:'amber', s:`▼ ${d.apiErrors||0} errors`, sc:'down'},
+    {l:'Memory Used', v:(d.memPct??11.5)+'%', c:'purple', s:`of ${d.memTotalGB??3.8} GB`, sc:d.memPct>80?'down':''},
+    {l:'Uptime', v:d.uptime??'--', c:'green', s:`◉ ${d.hostname??'Hermes'}`, sc:'up'},
+    {l:'Skills', v:d.skillsCount??101, c:'cyan', s:`${d.cronTotal||0} cron jobs`, sc:''}
+  ].map(m => `<div class="metric-card animate"><div class="metric-label">${m.l}</div><div class="metric-value ${m.c}">${m.v}</div><div class="metric-sub ${m.sc}">${m.s}</div></div>`).join('');
+  if(d.services) document.getElementById('sysGrid').innerHTML = d.services.map(s => `<div class="sys-card animate"><span class="icon">${s.icon}</span><div class="name"><span class="sys-indicator ${s.status}"></span>${s.name}</div><div class="uptime">${s.detail}</div></div>`).join('');
+  if(d.agents) {
+    document.getElementById('agentTotal').textContent = d.agents.length + ' total';
+    const cs = {H:'#34d399',S:'#60a5fa',C:'#fbbf24',K:'#a78bfa',G:'#22d3ee',W:'#f472b6',M:'#f87171'};
+    document.getElementById('agentList').innerHTML = d.agents.map(a => `<div class="agent-item"><div class="agent-info"><div class="agent-avatar" style="background:${(cs[a.initial]||'#22223a')}22;color:${cs[a.initial]||'#7a7a95'}">${a.initial}</div><div><div class="agent-name">${a.name}</div><div class="agent-desc">${a.desc}</div></div></div><span class="agent-status status-${a.status}">${a.statusLabel}</span></div>`).join('');
+  }
+  if(d.activity) document.getElementById('timeline').innerHTML = d.activity.map(a => `<div class="timeline-item"><div class="timeline-dot ${a.dot}">${a.icon}</div><div class="timeline-content"><div class="timeline-title">${a.title}</div>${a.desc?`<div class="timeline-desc">${a.desc}</div>`:''}<div class="timeline-time">${a.time}</div></div></div>`).join('');
+}
+window.__SNAPSHOT_DATA = {
+  totalTokens:7390658, estimatedCost:2.03, totalApiCalls:139, apiErrors:0, memPct:11.5, memTotalGB:3.8,
+  uptime:'1h 16m', hostname:'Hermes', skillsCount:101, cronTotal:1, activeAgents:7, agentsRunning:5,
+  services:[
+    {icon:'🖥️',name:'Hermes Core',status:'green',detail:'v0.6.0 · gateway'},
+    {icon:'📡',name:'Telegram Gateway',status:'green',detail:'Connected'},
+    {icon:'🧠',name:'DeepSeek API',status:'green',detail:'deepseek-chat'},
+    {icon:'⚡',name:'Subagents',status:'green',detail:'3 workers'}
+  ],
+  agents:[
+    {initial:'H',name:'Hermes (Main)',desc:'deepseek-chat · Telegram DM',status:'running',statusLabel:'Running'},
+    {initial:'S',name:'Subagent Pool',desc:'3 workers available',status:'idle',statusLabel:'Idle'},
+    {initial:'C',name:'Cron Scheduler',desc:'5 jobs, 1 active',status:'running',statusLabel:'Running'},
+    {initial:'K',name:'Kanban Orchestrator',desc:'Multi-agent dispatcher',status:'idle',statusLabel:'Idle'},
+    {initial:'G',name:'Gateway Listener',desc:'Telegram persistent',status:'running',statusLabel:'Running'},
+    {initial:'W',name:'Webhook Handler',desc:'Event-driven triggers',status:'idle',statusLabel:'Idle'},
+    {initial:'M',name:'Memory Syncer',desc:'Cross-session persistence',status:'running',statusLabel:'Running'}
+  ],
+  activity:[
+    {dot:'green',icon:'✓',title:'Mission Control deployed',desc:'v2.0 with live data',time:'today'},
+    {dot:'green',icon:'✓',title:'10 new skills installed',desc:'docker, fastmcp, meme, more',time:'today'},
+    {dot:'blue',icon:'↻',title:'DeepSeek: 7.3M tokens',desc:'≈ $2.03, 95% cache hit',time:'today'},
+    {dot:'purple',icon:'↻',title:'Telegram session active',desc:'DM from Matt Hogarth',time:'today'}
+  ]
+};
+async function fetchStatus(){ try{ const r=await fetch(API);const d=await r.json();render(d);document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString();}catch(e){render(window.__SNAPSHOT_DATA||{});document.getElementById('lastUpdated').textContent='Static snapshot';}}
+fetchStatus();
+</script>
+</body>
+</html>
