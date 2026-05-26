@@ -402,6 +402,89 @@ done
 
 The `current` entry is always present and is NOT a user snapshot — it's the live state reference. Only named snapshots (e.g., `before-upgrade`, `backup-2026-05-01`) count as user snapshots.
 
+## Hermes Backup Setup
+
+After deploying a Hermes container, configure these backups via the API:
+
+### Proxmox vzdump Backup Job
+
+Create a scheduled snapshot backup for the Hermes container:
+
+```python
+import urllib.request, json, ssl
+token = "PVEAPIToken=hermes2@pve!api=19b5fd1b-9354-47fd-8847-4ebbe28a4abb"
+base = "https://192.168.1.6:8006/api2/json"
+ctx = ssl._create_unverified_context()
+body = json.dumps({
+    "id": "hermes-backup",
+    "schedule": "sun 04:00",
+    "node": "pve1",
+    "vmid": "200",
+    "mode": "snapshot",
+    "storage": "local",
+    "compress": "zstd",
+    "prune-backups": "keep-last=4",
+    "enabled": 1,
+}).encode()
+req = urllib.request.Request(f"{base}/cluster/backup", data=body,
+    headers={"Authorization": token, "Content-Type": "application/json"})
+resp = urllib.request.urlopen(req, context=ctx, timeout=10)
+```
+
+### Hermes-internal Cron Jobs
+
+These run via the `cronjob` tool and should be recreated on new profiles:
+
+1. **Weekly Gateway Restart** (`0 4 * * 0`) — restarts the gateway to avoid memory leaks
+2. **Daily Cheapest-Model Check** (`0 8 * * *`) — checks if a cheaper OpenAI model exists and switches
+3. **Weekly Full Backup** (`0 4 * * 0`, no_agent=True, script: `hermes-backup.sh`) — pushes skills to GitHub, creates local tarball of `~/.hermes/` + `~/.hermes-vault/`, prunes old backups (keeps 8)
+
+### SSH Key Setup for Web Container
+
+To push backup tarballs to the web container (VMID 200) from the Hermes host:
+
+1. **Generate key** — `ssh-keygen -t rsa -b 4096 -f ~/.ssh/proxmox -N ""`
+2. **Inject into container** — on the Proxmox host, run:
+   ```bash
+   pct exec 200 -- mkdir -p /root/.ssh
+   pct exec 200 -- bash -c "echo '<pubkey>' > /root/.ssh/authorized_keys"
+   pct exec 200 -- chmod 600 /root/.ssh/authorized_keys
+   pct exec 200 -- chmod 700 /root/.ssh
+   pct exec 200 -- systemctl restart sshd
+   ```
+3. **Configure SSH** in `~/.ssh/config`:
+   ```
+   Host proxmox-backup
+       HostName 192.168.1.6
+       User root
+       IdentityFile ~/.ssh/proxmox
+       StrictHostKeyChecking accept-new
+   ```
+
+### Credential Vault
+
+API keys are stored in an encrypted local vault at `~/.hermes-vault/`. Uses AES-256-GCM with a passphrase. CLI: `hermes-vault <get|set|list|delete>`. The passphrase is stored in `~/.hermes/.env.local` for auto-unlock.
+
+**Vault contents (14 keys):** BRAVE_SEARCH_API_KEY, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_TUNNEL_ACTIVE_SECRET, CLOUDFLARE_TUNNEL_HERMES_DEV_SECRET, CLOUDFLARE_ZONE_MONTYGROUP, DEEPSEEK_API_KEY, GITHUB_TOKEN, HASS_TOKEN, NETZERO_API_TOKEN, PROXMOX_API_TOKEN, PROXMOX_URL, TELEGRAM_BOT_TOKEN, VERCEL_TOKEN, OPENAI_API_KEY
+
+Also stored in the Hermes credential pool (`~/.hermes/auth.json`): deepseek, gemini (both auto-discovered from env vars).
+
+**When provisioning a new Hermes container:** copy `~/.hermes-vault/` and `~/.hermes/.env.local` from the old container. The vault uses PBKDF2 + AES-256-GCM so it's safe to store in backups. Then run `hermes auth reset deepseek` to re-enable the pool.
+
+### Backup Script
+
+Located at `~/.hermes/scripts/hermes-backup.sh` (also symlinked to `~/.local/bin/hermes-backup`):
+
+```bash
+#!/bin/bash
+# Hermes full backup - run weekly
+BACKUP_DIR="/home/matth/hermes-backups"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+# 1. Push skills to GitHub (git add+commit+push)
+# 2. Create tarball of ~/.hermes/ + ~/.hermes-vault/ (excludes git, node_modules, logs, sessions)
+# 3. Prune old backups (keep last 8)
+```
+
 ## Pitfalls
 
 1. **API token must be `@pve` realm, not `@pam`** — `@pam` tokens don't get full access even with ACL modifications. The correct approach is a dedicated `@pve` user with Administrator role on `/`.
@@ -432,3 +515,38 @@ The `current` entry is always present and is NOT a user snapshot — it's the li
 13. **Web container nginx default config** — the default Debian nginx has a sites-enabled/default that takes priority. Always `rm -f /etc/nginx/sites-enabled/default` before enabling your site config.
 
 14. **Container default storage is small** — `rootfs=local-lvm:4` creates a 4GB rootfs. Check your site size: a single 55KB HTML file with inline SVGs is fine, but if deploying multiple sites or Docker, bump to `rootfs=local-lvm:8` or higher.
+
+15. **The `!` character in API token values explodes in bash** — `PVEAPIToken=hermes2@pve!api=19b5fd1b-...` contains a `!` which is history expansion in bash and will truncate the token after `!api`. To use the token in curl from bash, either:
+    - Use single quotes for the header: `-H 'Authorization: PVEAPIToken=hermes2@pve!api=...'`
+    - Or pass it via environment variable + Python (`urllib.request`) where string handling is safe
+    - Or use `set +H` to disable history expansion before the curl call
+    - When using `python3 -c` from terminal tool, pass the header value in Python directly via `urllib.request.Request(url, headers={"Authorization": token})` rather than through shell interpolation
+
+16. **SSH key injection into containers via Proxmox API requires the user's cooperation** — there is no `POST /nodes/pve1/lxc/{vmid}/exec` endpoint for LXC containers in most Proxmox versions (returns HTTP 501). This means:
+    - You cannot `mkdir` or write files inside a container via the API
+    - You cannot install packages via the API
+    - You MUST ask the user to run `pct exec` commands on the Proxmox host shell for any container bootstrapping
+    - The Proxmox API users endpoint (`/access/users/root@pam`) accepts SSH keys via PUT with `Content-Type: application/x-www-form-urlencoded` but the key must match a strict regex pattern — raw `ssh-rsa AAAA...` lines may be rejected
+
+17. **Proxmox backup jobs can be created via the API** — create vzdump schedules with:
+    ```python
+    import urllib.request, json, ssl
+    token = "PVEAPIToken=hermes2@pve!api=..."
+    base = "https://proxmox:8006/api2/json"
+    ctx = ssl._create_unverified_context()
+    body = json.dumps({
+        "id": "hermes-backup",
+        "schedule": "sun 04:00",
+        "node": "pve1",
+        "vmid": "200",
+        "mode": "snapshot",
+        "storage": "local",
+        "compress": "zstd",
+        "prune-backups": "keep-last=4",
+        "enabled": 1,
+    }).encode()
+    req = urllib.request.Request(f"{base}/cluster/backup", data=body,
+        headers={"Authorization": token, "Content-Type": "application/json"})
+    resp = urllib.request.urlopen(req, context=ctx, timeout=10)
+    ```
+    Note: the `!` in the token is safe inside Python strings — no bash explosion issue.

@@ -46,7 +46,21 @@ PVEAPIToken=hermes2@pve!api=19b5fd1b-9354-47fd-8847-4ebbe28a4abb
 
 **Always create API tokens under `@pve` realm**, not `@pam`.
 
-## Token Permission Failure Modes
+## Token Storage
+
+The API token is stored in the Hermes vault (`hermes-vault set PROXMOX_API_TOKEN "PVEAPIToken=<full-tokenid>=<value>"`). Also stored: `PROXMOX_URL=https://192.168.1.6:8006/api2/json`.
+
+**When provisioning a new Hermes container:** copy the vault (`~/.hermes-vault/`) and `.env.local` (vault passphrase) from the source container. Then verify with `hermes-vault get PROXMOX_API_TOKEN` and `hermes-vault get PROXMOX_URL`.
+
+### Backup Jobs Created
+
+These were created via the Proxmox API and should be recreated on new deployments:
+
+1. **vzdump** — VMID 200, `sun 04:00`, snapshot mode, local storage, zstd compression, keep last 4
+2. **Hermes cron jobs** (recreate via the `cronjob` tool):
+   - Weekly gateway restart (Sun 4am)
+   - Daily cheapest-model check (8am)
+   - Weekly backup script (Sun 4am, pushes skills to GitHub + creates tarball)
 
 ### Token authenticates but returns empty data
 
