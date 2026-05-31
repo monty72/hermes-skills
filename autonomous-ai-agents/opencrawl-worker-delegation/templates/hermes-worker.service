@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes Worker API (OpenCrawl) — accepts task delegation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/scripts/hermes-worker-api.py --port 8081
+Restart=on-failure
+RestartSec=5
+Environment=HERMES_HOME=%h/.hermes-worker
+WorkingDirectory=%h
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

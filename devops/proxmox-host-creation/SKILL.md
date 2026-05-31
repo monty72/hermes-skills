@@ -1,30 +1,31 @@
 ---
 name: proxmox-host-creation
 description: "Provision and manage Proxmox VE LXC containers and VMs via the REST API — create containers, authenticate with API tokens, bootstrap SSH access, install nginx, and host static sites. Covers the full lifecycle from Proxmox API setup to a serving web host."
-version: 1.0.0
+version: 1.5.0
 author: Hermes Agent
+platforms: [linux, macos]
 ---
 
 # Proxmox Host Creation
 
 Use this skill when provisioning machines on a **Proxmox VE** hypervisor via its REST API. This covers:
-- Authenticating with API tokens
+- Authenticating with API tokens or password
+- Managing VM/container lifecycle (start, stop, onboot)
 - Inspecting node resources (storage, templates, network)
 - Creating LXC containers from templates
-- Bootstrapping SSH access into a fresh container
-- Installing nginx and deploying sites to the container
-- Setting up the container as a production web host
-
-## Overview
-
-The pattern is: `Proxmox API → create container → bootstrap SSH → install nginx → copy site files → make live`
+- Bootstrapping SSH access into containers
+- Setting up nginx and deploying sites
+- Adding a second Proxmox node (discovery, onboarding, validation, cluster join)
+- Upgrading PVE 8→9 (Debian 12→13, conffile handling)
+- Creating a 2-node cluster (hostname conflicts, fingerprint acceptance, heterogeneous HW)
+- Power-outage recovery (DHCP drift, services restart)
+- Cloud-image VM creation (Ubuntu, Kali, generic)
 
 ## Authentication
 
 ### API Token (PREFERRED)
 
 ```bash
-# Token format in Authorization header
 Authorization: PVEAPIToken=<userid>@<realm>!<tokenid>=<token-value>
 
 # Example
@@ -33,7 +34,7 @@ curl -sk https://<proxmox-host>:8006/api2/json/version \
 ```
 
 **Token creation** (run on Proxmox shell):
-```
+```bash
 pveum user add <name>@pve
 pveum acl modify / -user <name>@pve -role Administrator
 pveum user token add <name>@pve api --privsep 0
@@ -41,67 +42,109 @@ pveum user token add <name>@pve api --privsep 0
 
 The last command prints a `value` UUID — that's the token secret. The `full-tokenid` is the token ID part.
 
-**IMPORTANT:** The correct command to grant permissions is:
-```
-pveum acl modify / -user <name>@<realm> -role Administrator
-```
-The **incorrect** command `pveum user modify <userid> -role Administrator -path /` does NOT work — Proxmox returns "Unknown option: role". The ACL is set via `pveum acl`, not `pveum user`.
+**IMPORTANT:** Correct ACL syntax is `pveum acl modify / -user <name>@<realm> -role Administrator`. The incorrect `pveum user modify <userid> -role Administrator -path /` returns "Unknown option: role".
 
 ### User/Password (Fallback)
 
 ```bash
-# Get a ticket
 curl -sk -X POST https://<host>:8006/api2/json/access/ticket \
   --data-urlencode 'username=root@pam' \
   --data-urlencode 'password=<password>'
 ```
 
-The ticket response includes `ticket` (cookie) and `CSRFPreventionToken` (header). Use these for subsequent requests.
+Response includes `ticket` (cookie) and `CSRFPreventionToken` (header). Use these for subsequent requests.
+
+## VM/CT Actions via API
+
+```text
+POST /nodes/{node}/{type}/{vmid}/status/{action}
+```
+
+Where `type` is `qemu` or `lxc` and `action` is one of: `start`, `stop`, `shutdown`, `reboot`.
+
+### Python pattern
+
+```python
+import urllib.request, ssl
+
+def pve_action(vmid, action, token, pve_url, vm_type="qemu"):
+    valid = {"start", "stop", "shutdown", "reboot"}
+    if action not in valid:
+        return False
+    ctx = ssl._create_unverified_context()
+    url = f"{pve_url}/nodes/pve1/{vm_type}/{vmid}/status/{action}"
+    req = urllib.request.Request(url, data=b"",
+        headers={"Authorization": token}, method="POST")
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=10):
+            return True
+    except Exception:
+        return False
+```
+
+**Type detection:** Determine `type` from `/cluster/resources?type=vm` — each resource has a `type` field of `"qemu"` or `"lxc"`.
+
+### Curl examples
+
+```bash
+TOKEN="PVEAPIToken=hermes2@pve!api=19b5fd1b-..."
+HOST="https://192.168.1.6:8006"
+
+# Start a stopped VM
+curl -sk -X POST "$HOST/api2/json/nodes/pve1/qemu/106/status/start" \
+  -H "Authorization: $TOKEN" -d ''
+
+# Graceful shutdown
+curl -sk -X POST "$HOST/api2/json/nodes/pve1/qemu/105/status/shutdown" \
+  -H "Authorization: $TOKEN" -d ''
+```
 
 ## API Exploration
 
 ```bash
-# Set these once
-TOKEN="PVEAPIToken=<userid>@pve!<tokenid>=<value>"
-HOST="https://192.168.1.6:8006"
-
-# Node status — CPU, memory, swap, kernel version
-curl -sk "$HOST/api2/json/nodes/pve1/status" -H "Authorization: $TOKEN"
-# Memory parsing example:
+# Node status
 curl -sk "$HOST/api2/json/nodes/pve1/status" -H "Authorization: $TOKEN" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)['data']
-mem = d['memory']
-print(f'RAM: {mem.get(\"used\",0)/1e9:.1f}GB / {mem.get(\"total\",0)/1e9:.1f}GB')
+m = d['memory']
+print(f'RAM: {m.get(\"used\",0)/1e9:.1f}GB / {m.get(\"total\",0)/1e9:.1f}GB')
+print(f'CPU: {d[\"cpu\"]*100:.1f}%')
+print(f'Uptime: {d[\"uptime\"]//3600}h {(d[\"uptime\"]%3600)//60}m')
+print(f'Disk: {d[\"rootfs\"][\"used\"]/1e9:.1f}GB / {d[\"rootfs\"][\"total\"]/1e9:.1f}GB')
+print(f'PVE: {d.get(\"pveversion\",\"?\")}')
+print(f'Kernel: {d[\"kversion\"]}')
 "
 
 # Storage pools
 curl -sk "$HOST/api2/json/nodes/pve1/storage" -H "Authorization: $TOKEN"
-# Shows type (lvmthin, dir), content types (rootdir,images,iso,vztmpl,backup), available/total
 
-# Available LXC templates (on 'local' storage)
+# All VMs/containers (with status summary)
+curl -sk "$HOST/api2/json/cluster/resources?type=vm" -H "Authorization: $TOKEN" | python3 -c "
+import sys, json
+vms = sorted(json.load(sys.stdin)['data'], key=lambda x: x.get('vmid',0))
+for v in vms:
+    name = v.get('name','?')
+    vid = v.get('vmid','?')
+    st = v.get('status','?')
+    if st == 'running':
+        mem = v.get('mem',0)/1e6
+        cpu = v.get('cpu',0)*100
+        print(f'  [{vid:<4}] {name:<15} RUNNING  CPU:{cpu:5.1f}%  RAM:{mem:6.0f}MB')
+    else:
+        print(f'  [{vid:<4}] {name:<15} {st.upper()}')
+"
+
+# Available LXC templates
 curl -sk "$HOST/api2/json/nodes/pve1/storage/local/content" -H "Authorization: $TOKEN"
-# Filter for .tar.zst files with vztmpl content type
-
-# All VMs/containers on the node
-curl -sk "$HOST/api2/json/cluster/resources?type=vm" -H "Authorization: $TOKEN"
 
 # Network bridges
 curl -sk "$HOST/api2/json/nodes/pve1/network" -H "Authorization: $TOKEN"
-# Filter active bridges: vmbr0 (main LAN), vmbr1, etc.
-
-# DNS
-curl -sk "$HOST/api2/json/nodes/pve1/dns" -H "Authorization: $TOKEN"
 ```
 
 ## Creating an LXC Container
 
 ```bash
-TOKEN="PVEAPIToken=<userid>@pve!<tokenid>=<value>"
-HOST="https://<proxmox-ip>:8006"
-
-curl -sk -X POST "$HOST/api2/json/nodes/pve1/lxc" \
-  -H "Authorization: $TOKEN" \
+curl -sk -X POST "$HOST/api2/json/nodes/pve1/lxc" -H "Authorization: $TOKEN" \
   --data-urlencode 'vmid=<id>' \
   --data-urlencode 'ostemplate=local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst' \
   --data-urlencode 'hostname=<name>' \
@@ -114,77 +157,59 @@ curl -sk -X POST "$HOST/api2/json/nodes/pve1/lxc" \
 ```
 
 **Important params:**
-- `vmid` — unique numeric ID (check existing VMs first, avoid conflicts)
-- `ostemplate` — path to the template on `local` storage
-- `memory` — MB of RAM (1024 is fine for a web server)
-- `rootfs=local-lvm:4` — 4GB disk on the lvmthin pool
-- `net0` — use `--data-urlencode` to handle the commas in the value
-- `--data-urlencode` must be used for all parameters, NOT `-d`, otherwise commas in `net0` cause parsing errors
+- `vmid` — unique numeric ID (check existing VMs first)
+- `ostemplate` — path to template on `local` storage
+- `rootfs=local-lvm:4` — 4GB disk on lvmthin pool; bump for Docker or multi-site
+- `net0` — use `--data-urlencode` for commas in value; `-d` will break parsing
+- `--data-urlencode` is required for all params, NOT `-d`
 
-**Response:** Returns a task UPID string. The task runs asynchronously.
+**Response:** Returns a task UPID string. Task runs asynchronously.
 
-## Wait for Container to Be Ready
+### Wait for readiness
 
 ```bash
 # Check task status
 curl -sk "$HOST/api2/json/nodes/pve1/tasks/<UPID>/status" -H "Authorization: $TOKEN"
 
-# View task log
-curl -sk "$HOST/api2/json/nodes/pve1/tasks/<UPID>/log" -H "Authorization: $TOKEN"
-
-# Check container status (wait for "running")
+# Check container status
 curl -sk "$HOST/api2/json/nodes/pve1/lxc/<vmid>/status/current" -H "Authorization: $TOKEN"
 
-# Get IP address
+# Get IP address (DHCP may take 3-8s)
 curl -sk "$HOST/api2/json/nodes/pve1/lxc/<vmid>/interfaces" -H "Authorization: $TOKEN"
-# Look for eth0's inet field (the first ip-address with type "inet" that isn't 127.0.0.1)
+# Look for eth0's inet field (first ip-address with type "inet" != 127.0.0.1)
 ```
-
-**Container readiness:** The container starts with DHCP. The IP address may take a few seconds to appear after the container starts. Poll interfaces every 3 seconds until the inet IP shows up.
 
 ## Bootstrapping SSH Access into a Fresh Container
 
-This is the hardest part. Fresh LXC containers have **no SSH keys** and **no password set**. You cannot SSH in directly.
+Fresh LXC containers have **no SSH keys** and **no password set**. You cannot SSH in directly.
 
-### Method 1: `pct exec` from Proxmox shell (REQUIRES USER TO RUN COMMANDS)
-
-If you don't have SSH access to the container, ask the user to run commands on their Proxmox root shell via `pct exec <vmid> -- <command>`:
+### Method 1: `pct exec` from Proxmox shell (requires user cooperation)
 
 ```bash
 # Set root password
 pct exec 200 -- passwd root
-# (interactive — enter password twice)
 
 # Install nginx
 pct exec 200 -- apt-get update -qq
 pct exec 200 -- apt-get install -y -qq nginx curl
 
-# Copy SSH key for future access
-pct exec 200 -- mkdir -p /root/.ssh
-pct exec 200 -- bash -c "echo '<your-public-key>' > /root/.ssh/authorized_keys"
-pct exec 200 -- chmod 600 /root/.ssh/authorized_keys
-pct exec 200 -- sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-pct exec 200 -- systemctl restart sshd
+# Copy SSH key (handles unprivileged uid mapping correctly)
+# Stage key on Proxmox host first:
+scp -o StrictHostKeyChecking=no ~/.ssh/id_ed25519 root@<proxmox-ip>:/root/.ssh/
 
-# Create site directory
-pct exec 200 -- mkdir -p /var/www/<sitename>
+# Then push (pct push handles uid mapping - do NOT write to /var/lib/lxc directly)
+ssh -o StrictHostKeyChecking=no root@<proxmox-ip> "
+  pct exec <VMID> -- mkdir -p /root/.ssh
+  pct push <VMID> /root/.ssh/id_ed25519 /root/.ssh/authorized_keys
+  pct exec <VMID> -- chmod 600 /root/.ssh/authorized_keys
+  pct exec <VMID> -- chmod 700 /root/.ssh
+"
 ```
 
-### Method 2: SSH with password (if password is set)
+### Method 2: SSH with password (if already set)
 
 ```bash
-# Once the container has a password set, SSH in with:
 ssh -o StrictHostKeyChecking=no root@<container-ip>
-```
-
-### Method 3: SSH key (if key was inserted via pct exec)
-
-```bash
-ssh -o StrictHostKeyChecking=no \
-  -o PasswordAuthentication=no \
-  -o PreferredAuthentications=publickey \
-  -i ~/.ssh/id_ed25519 \
-  root@<container-ip> "<command>"
 ```
 
 ### Common SSH failure modes
@@ -193,21 +218,12 @@ ssh -o StrictHostKeyChecking=no \
 |-------|-------|-----|
 | `Permission denied (publickey,password)` | No key set OR key not accepted | Use `pct exec` to verify the key was written correctly |
 | `ssh_askpass: exec()` warning | SSH client trying password auth | Add `-o PasswordAuthentication=no` |
-| `Connection refused` | SSH server not running in container | `pct exec <vmid> -- systemctl restart sshd` |
+| `Connection refused` | SSH server not running | `pct exec <vmid> -- systemctl restart sshd` |
 | Host key changed | Container recreated | `ssh-keygen -R <ip>` |
 
-**Key insight:** If SSH keeps refusing your key after `pct exec` added it, the problem is usually:
-1. `/root/.ssh` has wrong permissions (must be 700)
-2. `authorized_keys` has wrong permissions (must be 600)
-3. `PubkeyAuthentication` is disabled in sshd_config
-4. sshd hasn't been restarted after config change
-
-## Setting Up nginx on the Container
-
-Once you have access (via `pct exec` or SSH):
+## Setting Up nginx
 
 ```bash
-# Configure nginx
 cat > /etc/nginx/sites-available/<sitename> << 'EOF'
 server {
     listen 80;
@@ -217,131 +233,424 @@ server {
     location / { try_files $uri $uri/ =404; }
 }
 EOF
-
-# Enable site
 rm -f /etc/nginx/sites-enabled/default
 ln -sf /etc/nginx/sites-available/<sitename> /etc/nginx/sites-enabled/
-
-# Restart
 systemctl restart nginx
-
-# Verify
-curl -s http://localhost/
 ```
 
-### Method 4: Piping config files via heredoc + pct exec tee
-
-For small config files (nginx configs, scripts), pipe via standard input:
+### Piping configs via heredoc + pct exec tee
 
 ```bash
 cat << 'EOF' | pct exec <VMID> -- tee /path/to/file > /dev/null
 server {
     listen 80;
-    server_name _;
-    root /var/www/childminding;
-    index index.html;
-    location / { try_files $uri $uri/ =404; }
+    ...
 }
 EOF
 ```
 
-This avoids the quoting issues of `pct exec <VMID> -- bash -c 'cat > /path << 'EOF''...` and works cleanly with heredocs.
-
 ## Copying Site Files
 
-You can copy files from the Hermes VM to the container if SSH key access is working:
-
 ```bash
-# Copy single files
-scp -o StrictHostKeyChecking=no /path/to/index.html root@<container-ip>:/var/www/<sitename>/
+# Single files
+scp -o StrictHostKeyChecking=no index.html root@<container-ip>:/var/www/<sitename>/
 
-# Copy entire directory
-scp -o StrictHostKeyChecking=no -r /path/to/site/* root@<container-ip>:/var/www/<sitename>/
+# Entire directory
+scp -o StrictHostKeyChecking=no -r site/* root@<container-ip>:/var/www/<sitename>/
 ```
 
-### Copying Files When SSH is Blocked (pct push)
-
-If SSH key access isn't working and the file is too large for `pct exec` piping (e.g. >60KB HTML with inline SVG), use **pct push** from the Proxmox host:
+### When SSH is blocked — pct push from Proxmox host
 
 ```bash
-# Step 1: Stage the file on the Proxmox host
-# If Hermes VM serves the file on HTTP, pull it from there:
-curl -s http://<hermes-vm-ip>:<port>/<path> > /tmp/<filename>
+# Stage file on Proxmox host
+curl -s http://<hermes-vm>:<port>/<path> > /tmp/<filename>
 
-# Or copy from a remote host:
-scp user@remote:/path/to/file /tmp/<filename>
-
-# Step 2: Push into the container
+# Push (handles uid mapping)
 pct push <VMID> /tmp/<filename> /var/www/<sitename>/<filename>
-
-# Step 3: Verify
-curl -s http://<container-ip>/<path>
 ```
 
-**Architecture pattern for Hermes VM + Proxmox:**
-- **Hermes VM** (192.168.1.6) serves files via Flask on port 8000
-- **Proxmox host** (same IP) can reach Hermes VM's HTTP server on localhost:8000
-- **Web container** (192.168.1.229) cannot reach Hermes VM's ports directly
-- **Copy path**: Hermes VM (port 8000) → Proxmox shell (curl localhost:8000) → pct push → container
-- When the HTML file is too large for a single `pct exec` command, use the pct push pattern instead of trying to base64-encode and pipe it through stdin.
+## Startup Configuration (onboot / Boot Order)
+
+Configure VMs/containers to auto-start when the Proxmox host boots. Essential for homelabs with power cuts.
+
+### QEMU VMs
+
+```bash
+# Enable auto-start
+curl -sk -X PUT "$HOST/api2/json/nodes/pve1/qemu/<VMID>/config" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'onboot=1'
+
+# With staggered boot order
+curl -sk -X PUT "$HOST/api2/json/nodes/pve1/qemu/<VMID>/config" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'onboot=1' \
+  --data-urlencode 'startup=order=2'
+
+# Disable
+curl -sk -X PUT "$HOST/api2/json/nodes/pve1/qemu/<VMID>/config" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'onboot=0' \
+  --data-urlencode 'startup='
+```
+
+### LXC Containers
+
+Replace `qemu` with `lxc` in the URL path:
+```bash
+curl -sk -X PUT "$HOST/api2/json/nodes/pve1/lxc/<VMID>/config" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'onboot=1' \
+  --data-urlencode 'startup=order=4'
+```
+
+**Lock contention:** If the container just started, the config may be locked (`can't lock file '/run/lock/lxc/pve-config-<VMID>.lock'`). Wait a few seconds and retry.
+
+### Verification — config endpoint not cluster cache
+
+The `/cluster/resources?type=vm` API **caches** the `onboot` value. Always verify against the direct config:
+
+```bash
+curl -sk "$HOST/api2/json/nodes/pve1/qemu/<VMID>/config" \
+  -H "Authorization: $TOKEN" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)['data']
+print(f'onboot: {d.get(\"onboot\",0)}')
+print(f'startup: {d.get(\"startup\",\"not set\")}')
+"
+```
+
+### Staggered Boot Order Strategy
+
+| Order | Type | Purpose |
+|-------|------|---------|
+| 1 | Core services | DNS, DHCP, HA |
+| 2 | Stateful infra | Databases, message queues |
+| 3 | Compute workers | Docker hosts, Hermes workers |
+| 4+ | Stateless apps | Web servers, dev VMs |
+
+On this homelab (Proxmox 192.168.1.6): 102 HA(order=1), 106 Kali/Neo(order=2), 104 OpenCrawl(order=3), 200 web(order=4), 105 Hermes(onboot=1, no explicit order).
+
+## Multi-Node Discovery
+
+When bringing a second Proxmox node online, DHCP may assign an unexpected IP. Scan the LAN for it.
+
+### 1. Scan for port 8006 (Proxmox API) — no nmap needed
+
+```bash
+# Fast /24 scan using bash /dev/tcp
+for ip in $(seq 1 254); do
+  timeout 1 bash -c "echo >/dev/tcp/192.168.1.$ip/8006" 2>/dev/null && echo "192.168.1.$ip"
+done
+```
+
+Takes ~60s for full /24. Optimise by scanning likely ranges first.
+
+### 2. Identify the node
+
+```bash
+# Authenticate with root password (cross-node API tokens don't work pre-cluster)
+curl -sk -X POST 'https://<node-ip>:8006/api2/json/access/ticket' \
+  --data-urlencode 'username=root@pam' \
+  --data-urlencode 'password=<password>'
+```
+
+Response includes `ticket` (cookie) and `CSRFPreventionToken` - use these for subsequent API calls.
+
+### 3. Hardware validation
+
+```bash
+ssh root@<node-ip> '
+  echo "=== CPU ==="
+  lscpu | grep -E "Model name|CPU\(s\)|Thread|Core"
+  echo "=== RAM ==="
+  free -h
+  echo "=== Disks ==="
+  lsblk -d -o NAME,SIZE,MODEL,ROTA
+  echo "=== Storage ==="
+  pvesm status
+  echo "=== PVE ==="
+  pveversion
+'
+```
+
+### 4. Full Node Onboarding
+
+**Step 1 — Inject SSH key**
+
+The Proxmox API endpoint `PUT /access/users/root@pam` rejects `ssh-keys` as an unknown property (root is a `pam` realm user; only `@pve` realm users accept SSH keys in their schema). Use sshpass instead:
+
+```bash
+sudo apt-get install -y sshpass
+sshpass -p '<root-password>' ssh-copy-id -o StrictHostKeyChecking=accept-new root@<node-ip>
+ssh root@<node-ip> 'hostname && pveversion'
+```
+
+**Step 2 — Fix repositories**
+
+Fresh installs ship with enterprise repo enabled (requires subscription key):
+
+```bash
+ssh root@<node-ip> '
+  sed -i "s/^deb/#deb/" /etc/apt/sources.list.d/pve-enterprise.list 2>/dev/null || true
+  sed -i "s/^deb/#deb/" /etc/apt/sources.list.d/ceph.list 2>/dev/null || true
+  echo "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription" \
+    > /etc/apt/sources.list.d/pve-no-subscription.list
+  apt-get update -qq
+'
+```
+
+**Step 3 — Full dist-upgrade** (200+ packages common on fresh installs)
+
+```bash
+ssh root@<node-ip> 'DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -qq'
+```
+
+Check progress: `ssh root@<node-ip> 'tail -3 /var/log/dpkg.log'`
+
+**Step 4 — Network connectivity to existing node**
+
+```bash
+ssh root@<node-ip> "ping -c 2 -W 2 <existing-node-ip>"
+```
+
+Sub-second ping = same switch, ready for cluster join.
+
+**Step 5 — Set onboot for VMs** (see Startup Configuration section above)
+
+## Cluster Creation (Multi-Node)
+
+Create a Proxmox cluster between nodes, including heterogeneous hardware (AMD + Intel). A cluster turns several standalone hypervisors into one management plane with HA, live migration, and a single web UI.
+
+### Pre-requisites
+
+- Both nodes reachable on the same L2 network (sub-ms ping)
+- Root passwords known for both nodes
+- PVE versions should match (upgrade lower version first — see PVE 8→9 Upgrade below)
+- Decide on a cluster name (e.g. `homelab`, `production`)
+
+### Step 1: Create the cluster on Node 1
+
+```bash
+ssh root@<node1-ip> 'pvecm create <clustername>'
+```
+
+Generates corosync keys in `/etc/pve/corosync.conf`. Verify with `pvecm status` — should show 1 node, quorate.
+
+### Step 2: Fix hostname conflicts
+
+Fresh Proxmox installs default to hostname `pve`. If both nodes are `pve`, the cluster join fails with `hostname lookup 'pve' failed`. Rename Node 2:
+
+```bash
+ssh root@<node2-ip> '
+  echo "<new-hostname>" > /etc/hostname
+  hostname <new-hostname>
+  echo "<node2-ip> <new-hostname>" >> /etc/hosts
+  hostname -f   # verify resolves
+'
+```
+
+### Step 3: Join Node 2 to the cluster
+
+`pvecm add` is interactive — it prompts for API certificate fingerprint acceptance and root password. SSH key auth alone isn't enough; the API client needs fingerprint confirmation.
+
+**Expect script (reliable for non-interactive SSH):**
+
+```bash
+ssh root@<node2-ip> 'apt-get install -y expect -qq'
+
+cat > /tmp/pvecm.exp << 'EXPECT'
+#!/usr/bin/expect -f
+set timeout 60
+spawn pvecm add <node1-ip> --force
+expect {
+    "Are you sure" { send "yes\r"; exp_continue }
+    "assword" { send "<root-password>\r"; exp_continue }
+    eof { puts "DONE"; exit 0 }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+EXPECT
+chmod +x /tmp/pvecm.exp
+/tmp/pvecm.exp
+```
+
+**Why `--force`:** If Node 2 has existing configured VMs/containers, `pvecm add` refuses with `"this host already contains virtual guests"`. `--force` overrides this check.
+
+**Lock contention:** Stale locks at `/var/lock/pvecm.lock` from failed attempts block subsequent joins. Remove with `rm -f /var/lock/pvecm.lock`.
+
+**Monitor progress:** The join process: password auth → fingerprint prompt → API version check → joins request → stops local pve-cluster → syncs database → regenerates certificates → restarts pveproxy/pvedaemon → "successfully added node 'X' to cluster."
+
+### Step 4: Verify cluster health
+
+```bash
+# From either node
+pvecm status
+
+# From the API
+curl -sk "https://<node1>:8006/api2/json/cluster/status" \
+  -H "Authorization: PVEAPIToken=..." | python3 -c "
+import sys, json
+data = json.load(sys.stdin)['data']
+for item in data:
+    if 'name' in item and 'ip' in item:
+        print(f\"  {item['name']} @ {item['ip']}  type={item['type']} status={item.get('status')}\")
+    elif 'quorate' in item:
+        print(f\"  Quorum: {'Yes' if item['quorate'] else 'No'}\")
+"
+```
+
+Expected: 2 nodes listed, `quorate: Yes`.
+
+### Heterogeneous hardware considerations
+
+Proxmox clusters **fully support** different CPU vendors, RAM sizes, and storage:
+
+| Concern | Reality |
+|---------|---------|
+| **Different CPUs** (AMD vs Intel) | ✅ Works. For **live migration** between them, set VM CPU type to `x86-64-v2-AES` |
+| **Different RAM sizes** (e.g. 64GB vs 31GB) | ✅ HA only starts VMs on nodes with enough free RAM |
+| **Different storage** | ✅ Use local storage per node or shared Ceph/NFS |
+| **PVE version gap** (e.g. 9.2 vs 8.4) | ⚠️ Cluster requires matching major versions; upgrade first |
+
+### What clustering unlocks
+
+- **HA** — if one node dies, VMs restart on the other
+- **Live migration** — move VMs between nodes with zero downtime
+- **Single pane of glass** — manage both nodes from one web UI
+- **Quorum** — 2 nodes need a 3rd witness (RPi, LXC, QDevice) for proper HA to avoid split-brain
+
+## PVE 8→9 Major Upgrade (Debian 12 → 13)
+
+A major PVE upgrade moves the entire OS from Debian 12 (bookworm) to Debian 13 (trixie). Typically 200+ packages and a kernel bump (6.8.x → 7.0.x). Do this **before** joining to a cluster to keep versions matching.
+
+### Step 1: Switch repos from bookworm → trixie
+
+```bash
+ssh root@<node-ip> '
+  cat > /etc/apt/sources.list << EOF
+deb http://ftp.uk.debian.org/debian trixie main contrib
+deb http://ftp.uk.debian.org/debian trixie-updates main contrib
+deb http://security.debian.org trixie-security main contrib
+EOF
+
+  sed -i "s/bookworm/trixie/g" /etc/apt/sources.list.d/pve-no-subscription.list 2>/dev/null || true
+  apt-get update -qq
+'
+```
+
+### Step 2: Run the dist-upgrade
+
+```bash
+ssh root@<node-ip> 'DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -qq'
+```
+
+**Check progress:** `ssh root@<node-ip> 'tail -3 /var/log/dpkg.log'`
+
+### Step 3: Handle conffile prompts (most common failure)
+
+`DEBIAN_FRONTEND=noninteractive` doesn't always suppress conffile prompts. The typical blockers:
+
+**`lvm2` — `/etc/lvm/lvm.conf`:** The package maintainer's version ships with Proxmox-specific `global_filter` settings. If the default action is `N` (keep old), dpkg hangs. Fix:
+
+```bash
+ssh root@<node-ip> 'DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  -o Dpkg::Options::="--force-confnew" lvm2'
+```
+
+This accepts the new config, which unlocks all dependent PVE packages (pve-manager, qemu-server, pve-container, etc.).
+
+**Other conffile prompts:** Run `dpkg --configure -a --force-confdef --force-confold` to push through any remaining prompts with the "keep old" default.
+
+### Step 4: Clean up and reboot
+
+```bash
+ssh root@<node-ip> '
+  DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -qq --allow-downgrades
+  apt-get autoremove --purge -y -qq
+  reboot
+'
+```
+
+Check after reboot: `pveversion` should show PVE 9.x and `uname -r` should show 7.x kernel.
+
+### Step 5: Fix GRUB (if prompted)
+
+Some PVE 8→9 upgrades warn about removable bootloader config:
+
+```bash
+echo "grub-efi-amd64 grub2/force_efi_extra_removable boolean true" | debconf-set-selections -v -u
+apt-get install --reinstall -y grub-efi-amd64
+```
+
+On systems with `systemd-boot` instead of GRUB, this message is cosmetic — the bootloader update already ran via `/etc/kernel/postinst.d/zz-proxmox-boot`.
+
+## Post-Power-Outage Recovery
+
+After a power cut: Proxmox boots before VMs. VMs with `onboot=1` start in order, but **DHCP leases may change** (e.g. .137 → .138).
+
+### Step 1: Check which VMs are stopped
+
+```bash
+curl -sk "$HOST/api2/json/cluster/resources?type=vm" -H "Authorization: $TOKEN" | python3 -c "
+import sys, json
+vms = sorted(json.load(sys.stdin)['data'], key=lambda x: x.get('vmid',0))
+for v in vms:
+    print(f'  VM {v.get(\"vmid\",\"?\"):<5} {v.get(\"name\",\"?\"):<20} status={v.get(\"status\",\"?\"):<8} type={v.get(\"type\",\"?\")}')
+"
+```
+
+### Step 2: Start stopped VMs
+
+```bash
+for vmid in 104 106; do
+  curl -sk -X POST "$HOST/api2/json/nodes/pve1/qemu/$vmid/status/start" -H "Authorization: $TOKEN" -d ''
+done
+```
+
+### Step 3: Find VMs after DHCP IP change
+
+If SSH fails with "No route to host", the IP changed:
+
+```bash
+for ip in $(seq 130 150); do
+  ping -c 1 -W 1 "192.168.1.$ip" >/dev/null 2>&1 && \
+    ssh -o ConnectTimeout=2 user@192.168.1.$ip 'hostname' 2>/dev/null
+done
+```
+
+After finding the new IP, update: SSH config, cron jobs, skill references (like `opencrawl-worker-delegation`), and any scripts/inventory.
+
+### Step 4: Check services came up
+
+```bash
+ssh user@<new-ip> 'systemctl --user is-active hermes-gateway'
+ssh user@<new-ip> 'systemctl --user is-active hermes-worker && curl -s http://localhost:8081/health'
+```
+
+### Step 5: Pin DHCP lease (prevent future drift)
+
+Assign a static IP via cloud-init, netplan, or a static DHCP reservation on your router.
 
 ## Orphan Resource Cleanup
 
-Proxmox occasionally accumulates orphaned resources that waste disk space or clutter the resource list. This section covers detection and cleanup.
-
 ### Ghost Container / Phantom VM
 
-A **ghost container** appears in the cluster resource list (`/cluster/resources?type=vm`) with `status: "unknown"` and no name, but its config file no longer exists (`Configuration file 'nodes/pve1/lxc/<VMID>.conf' does not exist`).
+Appears in cluster resources with `status: "unknown"` and no name. Config file no longer exists.
 
 **Detection:**
-
 ```bash
-TOKEN="PVEAPIToken=<userid>@pve!<tokenid>=<value>"
-HOST="https://<proxmox-ip>:8006"
-
-# List all VMs/CTs — look for entries with no name and unknown status
-curl -sk "$HOST/api2/json/cluster/resources?type=vm" -H "Authorization: $TOKEN"
-
-# Check if a specific VMID is a ghost by trying its config
 curl -sk "$HOST/api2/json/nodes/pve1/lxc/<VMID>/config" -H "Authorization: $TOKEN"
 # Returns: "Configuration file does not exist"
-
-# A ghost has no disk, no RAM, no CPU usage — purely cosmetic
 ```
 
-**Cause:** The container was deleted (config file removed) but the pmxcfs cluster database still caches the entry.
-
-**Removal (requires root@pam shell):**
-
-The API token cannot remove ghost entries. The config file is already gone, but the cluster database still references the VMID. Fix from the Proxmox host shell:
-
+**Removal (requires root@pam shell - API token can't do this):**
 ```bash
-# Method 1 — pvesh (cleanest)
 pvesh delete /cluster/config/lxc/<VMID>
-
-# Method 2 — direct file removal (equivalent)
-rm -f /etc/pve/nodes/pve1/lxc/<VMID>.conf
 ```
-
-**Why the API can't do it:** Deleting a container via API (`DELETE /nodes/pve1/lxc/<VMID>`) only works if the config file exists. A ghost has no config file, so the API returns 404. The API token user (`@pve` realm) cannot access the Proxmox shell. Only `root@pam` can run `pvesh` or modify `/etc/pve/` directly.
-
-**Workaround attempts that don't work:**
-- Restarting `pveproxy` or `pve-cluster` services (doesn't clear the cache)
-- Re-creating the container with the same VMID then deleting it (creation fails with "CT <VMID> already exists")
-- Using the termproxy `login` endpoint (requires a `@pam` user, not `@pve`)
 
 ### Stale ISOs and Templates
 
-**Detection:**
-
 ```bash
-TOKEN="PVEAPIToken=<userid>@pve!<tokenid>=<value>"
-HOST="https://<proxmox-ip>:8006"
-
-# List all content on local storage (ISOs + templates)
-curl -sk "$HOST/api2/json/nodes/pve1/storage/local/content" -H "Authorization: $TOKEN"
-
-# To inspect in Python:
 curl -sk "$HOST/api2/json/nodes/pve1/storage/local/content" -H "Authorization: $TOKEN" | python3 -c "
 import sys, json
 items = json.load(sys.stdin).get('data', [])
@@ -353,66 +662,101 @@ for item in sorted(items, key=lambda x: x.get('volid','')):
 "
 ```
 
-**What to look for:**
-- **Duplicate/superseded ISOs** — e.g., `ubuntu-24.04.1` AND `ubuntu-24.04.4` — delete the older one
-- **Unlabeled templates** — `rootfs.tar.xz` without a distro tag — likely orphaned
-- **ISOs you no longer need** — stale test installers, old distro versions
-
-**Deletion (via API):**
-
+**Delete:**
 ```bash
-TOKEN="PVEAPIToken=<userid>@pve!<tokenid>=<value>"
-HOST="https://<proxmox-ip>:8006"
-
-# Delete an ISO
-curl -sk -X DELETE "$HOST/api2/json/nodes/pve1/storage/local/content/local:iso/<filename>" \
-  -H "Authorization: $TOKEN"
-
-# Delete an old template
-curl -sk -X DELETE "$HOST/api2/json/nodes/pve1/storage/local/content/local:vztmpl/<filename>" \
-  -H "Authorization: $TOKEN"
+curl -sk -X DELETE "$HOST/api2/json/nodes/pve1/storage/local/content/local:iso/<filename>" -H "Authorization: $TOKEN"
+curl -sk -X DELETE "$HOST/api2/json/nodes/pve1/storage/local/content/local:vztmpl/<filename>" -H "Authorization: $TOKEN"
 ```
 
-**Path encoding:** The `<content>` value is `local:iso/<filename>` or `local:vztmpl/<filename>`. The full volid (e.g., `local:iso/ubuntu-24.04.1-desktop-amd64.iso`) becomes the path segment in the URL.
+## Creating a VM from a Cloud Image (Cloud-Init)
 
-### Snapshot Cleanup
+For QEMU/KVM VMs when LXC won't cut it (Docker, custom kernels, full isolation).
 
-**Check all VMs/CTs for snapshots:**
+**Pattern:** `download → create skeleton → import disk → cloud-init → resize → boot → verify`
+
+### Download image
 
 ```bash
-TOKEN="PVEAPIToken=<userid>@pve!<tokenid>=<value>"
-HOST="https://<proxmox-ip>:8006"
-
-for vmid in $(curl -sk "$HOST/api2/json/cluster/resources?type=vm" -H "Authorization: $TOKEN" | \
-  python3 -c "import sys,json; [print(v['vmid']) for v in json.load(sys.stdin)['data']]" ); do
-  # Try qemu VM
-  snap=$(curl -sk "$HOST/api2/json/nodes/pve1/qemu/$vmid/snapshot" -H "Authorization: $TOKEN" 2>/dev/null)
-  snaps=$(echo "$snap" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); [print(s['name']) for s in d if s.get('name','current')!='current']" 2>/dev/null)
-  if [ -n "$snaps" ]; then
-    echo "VM $vmid snapshots: $snaps"
-  fi
-  # Try LXC
-  snap=$(curl -sk "$HOST/api2/json/nodes/pve1/lxc/$vmid/snapshot" -H "Authorization: $TOKEN" 2>/dev/null)
-  snaps=$(echo "$snap" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); [print(s['name']) for s in d if s.get('name','current')!='current']" 2>/dev/null)
-  if [ -n "$snaps" ]; then
-    echo "LXC $vmid snapshots: $snaps"
-  fi
-done
+wget 'https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img' \
+  -O /root/ubuntu-24.04-server-cloudimg-amd64.img
+file /root/ubuntu-24.04-server-cloudimg-amd64.img  # Should say: QEMU QCOW Image
 ```
 
-The `current` entry is always present and is NOT a user snapshot — it's the live state reference. Only named snapshots (e.g., `before-upgrade`, `backup-2026-05-01`) count as user snapshots.
+### Create VM
+
+```bash
+qm create <VMID> --name <name> --memory <MB> --cores <N> --cpu host \
+  --net0 virtio,bridge=vmbr0 --agent enabled=1 --ostype l26
+
+qm importdisk <VMID> /path/to/cloud-image.img local-lvm
+
+qm set <VMID> \
+  --scsihw virtio-scsi-pci \
+  --scsi0 local-lvm:vm-<VMID>-disk-0 \
+  --boot order=scsi0
+
+qm set <VMID> --ide2 local-lvm:cloudinit
+```
+
+**Content type trap:** `--ide2 local:cloudinit` fails with "storage 'local' does not support content-type 'images'". Always use `local-lvm` for the cloudinit drive.
+
+### Cloud-init config
+
+```bash
+qm set <VMID> \
+  --ciuser <username> \
+  --sshkeys <(echo 'ssh-ed25519 AAAA...') \
+  --ipconfig0 ip=dhcp
+```
+
+**SSH key trap:** `--sshkeys` accepts the key CONTENT, not a file path. Use process substitution. If you use `--sshkey /root/.ssh/authorized_keys`, it injects the **Proxmox host's** keys, not the agent's.
+
+### Resize, boot, find IP
+
+```bash
+qm resize <VMID> scsi0 50G
+qm start <VMID>
+
+# Find IP:
+nmap -sn <subnet>/24 | grep -B 2 '<MAC>'
+# Or via guest agent:
+qm guest exec <VMID> -- ip addr show
+```
+
+### Post-boot: Install QEMU Guest Agent
+
+```bash
+ssh <user>@<vm-ip> "sudo apt-get update && sudo apt-get install -y qemu-guest-agent && sudo systemctl start qemu-guest-agent"
+```
+
+**Note:** Don't `systemctl enable` — it has no [Install] section. udev auto-activates on reboot.
+
+### Kali Linux Cloud Image
+
+Kali ships as `.tar.xz` containing `disk.raw` (not a direct `.qcow2`). PEP 668 blocks system pip (use pipx).
+
+```bash
+tar xf kali-linux-2026.1-cloud-genericcloud-amd64.tar.xz
+qemu-img convert -f raw -O qcow2 disk.raw kali.qcow2
+rm disk.raw
+
+qm create 106 --name kali --memory 4096 --cores 4 --cpu host \
+  --net0 virtio,bridge=vmbr0 --agent enabled=1 --ostype l26
+qm importdisk 106 kali.qcow2 local-lvm
+qm set 106 --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-106-disk-0 --boot order=scsi0
+qm set 106 --ide2 local-lvm:cloudinit --ciuser root \
+  --sshkeys <(echo 'ssh-ed25519 AAAA...') --ipconfig0 ip=dhcp
+qm resize 106 scsi0 50G
+qm start 106
+```
 
 ## Hermes Backup Setup
 
-After deploying a Hermes container, configure these backups via the API:
-
-### Proxmox vzdump Backup Job
-
-Create a scheduled snapshot backup for the Hermes container:
+### Proxmox vzdump backup job
 
 ```python
 import urllib.request, json, ssl
-token = "PVEAPIToken=hermes2@pve!api=19b5fd1b-9354-47fd-8847-4ebbe28a4abb"
+token = "PVEAPIToken=hermes2@pve!api=..."
 base = "https://192.168.1.6:8006/api2/json"
 ctx = ssl._create_unverified_context()
 body = json.dumps({
@@ -431,122 +775,124 @@ req = urllib.request.Request(f"{base}/cluster/backup", data=body,
 resp = urllib.request.urlopen(req, context=ctx, timeout=10)
 ```
 
-### Hermes-internal Cron Jobs
+### Credential vault
 
-These run via the `cronjob` tool and should be recreated on new profiles:
+API keys at `~/.hermes-vault/` (AES-256-GCM, passphrase in `~/.hermes/.env.local`). CLI: `hermes-vault <get|set|list|delete>`.
 
-1. **Weekly Gateway Restart** (`0 4 * * 0`) — restarts the gateway to avoid memory leaks
-2. **Daily Cheapest-Model Check** (`0 8 * * *`) — checks if a cheaper OpenAI model exists and switches
-3. **Weekly Full Backup** (`0 4 * * 0`, no_agent=True, script: `hermes-backup.sh`) — pushes skills to GitHub, creates local tarball of `~/.hermes/` + `~/.hermes-vault/`, prunes old backups (keeps 8)
+## Modifying Running VM Config (RAM, CPU, etc.)
 
-### SSH Key Setup for Web Container
-
-To push backup tarballs to the web container (VMID 200) from the Hermes host:
-
-1. **Generate key** — `ssh-keygen -t rsa -b 4096 -f ~/.ssh/proxmox -N ""`
-2. **Inject into container** — on the Proxmox host, run:
-   ```bash
-   pct exec 200 -- mkdir -p /root/.ssh
-   pct exec 200 -- bash -c "echo '<pubkey>' > /root/.ssh/authorized_keys"
-   pct exec 200 -- chmod 600 /root/.ssh/authorized_keys
-   pct exec 200 -- chmod 700 /root/.ssh
-   pct exec 200 -- systemctl restart sshd
-   ```
-3. **Configure SSH** in `~/.ssh/config`:
-   ```
-   Host proxmox-backup
-       HostName 192.168.1.6
-       User root
-       IdentityFile ~/.ssh/proxmox
-       StrictHostKeyChecking accept-new
-   ```
-
-### Credential Vault
-
-API keys are stored in an encrypted local vault at `~/.hermes-vault/`. Uses AES-256-GCM with a passphrase. CLI: `hermes-vault <get|set|list|delete>`. The passphrase is stored in `~/.hermes/.env.local` for auto-unlock.
-
-**Vault contents (14 keys):** BRAVE_SEARCH_API_KEY, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_TUNNEL_ACTIVE_SECRET, CLOUDFLARE_TUNNEL_HERMES_DEV_SECRET, CLOUDFLARE_ZONE_MONTYGROUP, DEEPSEEK_API_KEY, GITHUB_TOKEN, HASS_TOKEN, NETZERO_API_TOKEN, PROXMOX_API_TOKEN, PROXMOX_URL, TELEGRAM_BOT_TOKEN, VERCEL_TOKEN, OPENAI_API_KEY
-
-Also stored in the Hermes credential pool (`~/.hermes/auth.json`): deepseek, gemini (both auto-discovered from env vars).
-
-**When provisioning a new Hermes container:** copy `~/.hermes-vault/` and `~/.hermes/.env.local` from the old container. The vault uses PBKDF2 + AES-256-GCM so it's safe to store in backups. Then run `hermes auth reset deepseek` to re-enable the pool.
-
-### Backup Script
-
-Located at `~/.hermes/scripts/hermes-backup.sh` (also symlinked to `~/.local/bin/hermes-backup`):
+Change VM resources on a running or stopped VM via the Proxmox API. Works with both `qemu` and `lxc` types.
 
 ```bash
-#!/bin/bash
-# Hermes full backup - run weekly
-BACKUP_DIR="/home/matth/hermes-backups"
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-# 1. Push skills to GitHub (git add+commit+push)
-# 2. Create tarball of ~/.hermes/ + ~/.hermes-vault/ (excludes git, node_modules, logs, sessions)
-# 3. Prune old backups (keep last 8)
+TOKEN="PVEAPIToken=hermes2@pve!api=..."
+HOST="https://192.168.1.6:8006"
+
+# Change RAM (e.g. 4GB → 8GB on VM 106)
+curl -sk -X PUT "$HOST/api2/json/nodes/pve1/qemu/106/config" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'memory=8192'
+
+# Change CPU cores
+curl -sk -X PUT "$HOST/api2/json/nodes/pve1/qemu/106/config" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'cores=4'
+```
+
+**RAM changes require a VM reboot to take effect** — the config is updated immediately but the running VM won't see new resources until the next boot.
+
+### Snapshot Policy: Always Snapshot Before Destructive Changes
+
+Before any change that requires a reboot or modifies core system resources (RAM, CPU, disk resize, network change, OS upgrade), **take a Proxmox snapshot first**. This is the user's preferred safety pattern — ensures instant rollback if the change causes boot failure or instability.
+
+```bash
+# Take a snapshot
+curl -sk -X POST "$HOST/api2/json/nodes/pve1/qemu/106/snapshot" \
+  -H "Authorization: $TOKEN" \
+  --data-urlencode 'snapname=pre-memory-upgrade' \
+  --data-urlencode 'vmstate=0' \
+  --data-urlencode 'description=Snapshot before 4GB→8GB RAM upgrade'
+
+# Verify snapshot exists
+curl -sk "$HOST/api2/json/nodes/pve1/qemu/106/snapshot" \
+  -H "Authorization: $TOKEN" | python3 -m json.tool
+
+# Rollback if something goes wrong
+curl -sk -X POST "$HOST/api2/json/nodes/pve1/qemu/106/snapshot/pre-memory-upgrade/rollback" \
+  -H "Authorization: $TOKEN" -d ''
+
+# Clean up the snapshot after confirming stability (e.g. 24h later)
+curl -sk -X DELETE "$HOST/api2/json/nodes/pve1/qemu/106/snapshot/pre-memory-upgrade" \
+  -H "Authorization: $TOKEN"
+```
+
+**Snapshot naming convention:** `pre-<description-of-change>` — e.g. `pre-memory-upgrade`, `pre-kernel-update`, `pre-os-upgrade`.
+
+**When to snapshot:**
+| Trigger | Snapshot needed? |
+|---------|----------------|
+| RAM/CPU change + reboot | ✅ Yes |
+| Disk resize (online) | ⚠️ Only if resize risks data |
+| Kernel/OS upgrade | ✅ Yes |
+| Config change (HDMI, boot order, no reboot) | ❌ No |
+| Adding a new disk (hotplug) | ❌ No |
+
+### Post-change verification
+
+After applying a config change and rebooting:
+
+```bash
+# 1. VM back and running
+curl -sk "$HOST/api2/json/nodes/pve1/qemu/106/status/current" \
+  -H "Authorization: $TOKEN" | python3 -c "
+import sys, json; d=json.load(sys.stdin)['data']
+print(f'Status: {d.get(\"status\")}')
+print(f'RAM (config): {d.get(\"maxmem\",0)/1024/1024:.0f}MB')
+print(f'Uptime: {d.get(\"uptime\",0)//3600}h')
+"
+
+# 2. SSH reachable + services running
+ssh -o ConnectTimeout=10 -o BatchMode=yes root@<vm-ip> 'free -h | grep Mem'
+
+# 3. Confirm Telegram/Discord gateway reconnected (if applicable)
+ssh -o ConnectTimeout=10 root@<vm-ip> 'systemctl is-active hermes-gateway'
 ```
 
 ## Pitfalls
 
-1. **API token must be `@pve` realm, not `@pam`** — `@pam` tokens don't get full access even with ACL modifications. The correct approach is a dedicated `@pve` user with Administrator role on `/`.
+1. **Container IP takes time** --- DHCP after `pct start` takes 3-8s. Don't SSH immediately.
 
-2. **Fresh containers have no SSH access** — you MUST use `pct exec` from the Proxmox shell to bootstrap. Always tell the user what commands to run. Provide the exact copy-paste block.
+2. **Unprivileged containers** --- set `unprivileged=1` unless the container needs device access.
 
-3. **`--data-urlencode` is required for `net0`** — the commas in `net0=name=eth0,bridge=vmbr0,ip=dhcp` break if passed with `-d`. Always use `--data-urlencode` for ALL params.
+3. **Can't install packages from outside** — all provisioning goes through `pct exec` or SSH.
 
-4. **Check existing VMIDs first** — use `curl -sk "$HOST/api2/json/cluster/resources?type=vm"` to find used VMIDs. Avoid conflicts (common in multi-user setups).
+4. **`curl -sk` required** — Proxmox's self-signed cert needs `-k`.
 
-5. **Container IP takes time to appear** — DHCP lease acquisition after `pct start` can take 3-8 seconds. Don't try to SSH immediately.
+5. **API token `!` in bash** — `PVEAPIToken=user@pve!id=value` contains `!` (history expansion). Use single quotes in curl: `-H 'Authorization: PVEAPIToken=...'`. Safe in Python strings.
 
-6. **Unprivileged containers** — set `unprivileged=1` unless the container needs device access. Unprivileged is more secure and standard for web hosts.
+6. **`PUT /access/users/root@pam` rejects `ssh-keys`** — PVE 8.x returns `"ssh-keys: property is not defined in schema"`. Root is a `pam` realm user; only `@pve` users accept SSH keys in their schema. Use sshpass + ssh-copy-id instead.
 
-7. **You can't install packages from Hermes VM onto the container** — all provisioning must go through `pct exec` or SSH. Don't try `apt-get` from outside.
+7. **API tokens from node1 don't work on node2 pre-cluster** — Token is scoped to the `pve` realm on a specific cluster. Until nodes are clustered, use root password.
 
-8. **`curl -sk` disables SSL verification** — required for Proxmox's self-signed cert. Without `-k` you'll get certificate errors.
+8. **Ghost containers (unknown status)** — Config file removed but pmxcfs still caches the entry. API can't delete them; requires `pvesh delete` from root@pam shell.
 
-- **Token values are UUIDs** — they look like `19b5fd1b-9354-47fd-8847-4ebbe28a4abb`. The token string in the Authorization header is `<full-tokenid>=<value>` with an equals sign between them.
-- **API tokens cannot delete ghost CTs, run shell commands, or access the pmxcfs directly** — see `references/api-token-limitations.md` for the full capability matrix.
+9. **Token permissions propagate slowly** — 1-3s delay after creation. If you see "Permission check failed", wait and retry.
 
-10. **The ACL command for Proxmox** — correct syntax is `pveum acl modify / -user <user>@<realm> -role Administrator`. The older `pveum user modify` syntax with `-role` and `-path` options is incorrect.
+10. **`pct exec` doesn't work with TTY commands** — `passwd`, `vi`, etc. are interactive. Use `chpasswd` piped input or set during creation.
 
-11. **Token permissions propagate slowly** — after creating a token with Administrator role, there can be a 1-3 second delay before the API returns full data. If you see "Permission check failed", wait a moment and retry.
+11. **LXC containers can't be exec'd via API** — `POST /nodes/pve1/lxc/{vmid}/exec` returns 501 in most PVE versions. Must use `pct exec` from the Proxmox shell.
 
-12. **`pct exec` won't work with commands that need TTY** — things like `passwd`, `vi`, or anything interactive. For `passwd`, provide the password via `chpasswd` piped input or set it during container creation with `password=<value>`.
+12. **Storage content type mismatch** — `local` storage doesn't support `images` content type. Cloudinit drives and VM disks must use `local-lvm`.
 
-13. **Web container nginx default config** — the default Debian nginx has a sites-enabled/default that takes priority. Always `rm -f /etc/nginx/sites-enabled/default` before enabling your site config.
+13. **`--sshkeys` is content, not a path** — Use process substitution: `--sshkeys <(echo 'ssh-ed25519 AAAA...')`.
 
-14. **Container default storage is small** — `rootfs=local-lvm:4` creates a 4GB rootfs. Check your site size: a single 55KB HTML file with inline SVGs is fine, but if deploying multiple sites or Docker, bump to `rootfs=local-lvm:8` or higher.
+14. **Web container nginx default** — `rm -f /etc/nginx/sites-enabled/default` before enabling your site config.
 
-15. **The `!` character in API token values explodes in bash** — `PVEAPIToken=hermes2@pve!api=19b5fd1b-...` contains a `!` which is history expansion in bash and will truncate the token after `!api`. To use the token in curl from bash, either:
-    - Use single quotes for the header: `-H 'Authorization: PVEAPIToken=hermes2@pve!api=...'`
-    - Or pass it via environment variable + Python (`urllib.request`) where string handling is safe
-    - Or use `set +H` to disable history expansion before the curl call
-    - When using `python3 -c` from terminal tool, pass the header value in Python directly via `urllib.request.Request(url, headers={"Authorization": token})` rather than through shell interpolation
+15. **Container default storage is small** — `rootfs=local-lvm:4` = 4GB. Bump for Docker or multi-site deployments.
 
-16. **SSH key injection into containers via Proxmox API requires the user's cooperation** — there is no `POST /nodes/pve1/lxc/{vmid}/exec` endpoint for LXC containers in most Proxmox versions (returns HTTP 501). This means:
-    - You cannot `mkdir` or write files inside a container via the API
-    - You cannot install packages via the API
-    - You MUST ask the user to run `pct exec` commands on the Proxmox host shell for any container bootstrapping
-    - The Proxmox API users endpoint (`/access/users/root@pam`) accepts SSH keys via PUT with `Content-Type: application/x-www-form-urlencoded` but the key must match a strict regex pattern — raw `ssh-rsa AAAA...` lines may be rejected
+16. **Vault path in background processes** — Use absolute path `~/.local/bin/hermes-vault` via `os.path.expanduser()`. Background tasks may not have `~/.local/bin/` on PATH.
 
-17. **Proxmox backup jobs can be created via the API** — create vzdump schedules with:
-    ```python
-    import urllib.request, json, ssl
-    token = "PVEAPIToken=hermes2@pve!api=..."
-    base = "https://proxmox:8006/api2/json"
-    ctx = ssl._create_unverified_context()
-    body = json.dumps({
-        "id": "hermes-backup",
-        "schedule": "sun 04:00",
-        "node": "pve1",
-        "vmid": "200",
-        "mode": "snapshot",
-        "storage": "local",
-        "compress": "zstd",
-        "prune-backups": "keep-last=4",
-        "enabled": 1,
-    }).encode()
-    req = urllib.request.Request(f"{base}/cluster/backup", data=body,
-        headers={"Authorization": token, "Content-Type": "application/json"})
-    resp = urllib.request.urlopen(req, context=ctx, timeout=10)
-    ```
-    Note: the `!` in the token is safe inside Python strings — no bash explosion issue.
+17. **`onboot` cluster cache is stale** — The `/cluster/resources` API caches `onboot: 0` even after setting it. Verify via the direct VM config endpoint instead.
+
+18. **Stopping pve-cluster breaks all access** — If you `systemctl stop pve-cluster` on a node, the Proxmox API, web UI, and SSH key auth all stop working (pmxcfs provides the access control layer). Recovery requires password-based SSH or physical console to restart `systemctl start pve-cluster`.
+
+19. **`pvecm add` stale lock** — Failed join attempts leave `/var/lock/pvecm.lock`. Remove with `rm -f /var/lock/pvecm.lock` before retrying.

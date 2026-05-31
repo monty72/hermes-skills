@@ -177,6 +177,12 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 See `netzero-powerwall-api` skill for full documentation and pitfalls.
 
+### Tesla Owner API — Direct Config (No NetZero)
+
+All Powerwall configuration settings (energy exports, operating mode, backup reserve, storm mode) can be set directly via the Tesla Owner API `owner-api.teslamotors.com`. No NetZero subscription or token required — only a Tesla OAuth access token.
+
+See `netzero-powerwall-api` skill → **Direct Tesla Owner API (No NetZero)** section for full endpoint docs, Python examples, and troubleshooting.
+
 ## Known Pitfalls
 
 - **PW3 has no web UI** — `https://<gateway>/` returns 404 on firmware 26.x. This is NORMAL. The API is still there.
@@ -187,6 +193,7 @@ See `netzero-powerwall-api` skill for full documentation and pitfalls.
 - **Debian 13+ blocks system pip** — use `pipx` or a venv instead.
 - **GUI deps missing on Linux** — `sudo apt install python3-gi gir1.2-webkit2-4.0` for the pywebview popup.
 - **User confusion: auth URL vs callback URL** — users often paste back the same auth URL they opened, not the callback URL they landed on after login. When asking for the redirect URL, say "Copy the address bar URL AFTER you log in — it starts with tesla://auth/callback?code=..."
+- **Export vs import rates — don't confuse them** — When quoting earnings from grid export, use the export tariff not the import rate. UK Octopus Outgoing Fixed pays 12p/kWh (March 2026), not the peak import rate of ~31.7p/kWh. Saying "£1.90/hour" when the real figure is 72p/hour wastes credibility. Always confirm the user's specific export tariff before quoting numbers.
 - **User pastes auth URL 5+ times without logging in** — a common pattern: the user copies the auth URL from the agent's message and pastes it right back, thinking it's the output they need to return. PIVOT AFTER 2 ATTEMPTS. Do NOT keep asking — switch to the two-machine `authtoken` flow or manual token injection (via `cache.json` extraction). Repeating wastes many turns.
 - **`authtoken` can succeed silently** — `pypowerwall authtoken` may print "Login cancelled or timed out" due to a GUI/webview error, but STILL save valid tokens to `~/.pypowerwall/cache.json` if the browser login completed before the webview failed. Always check `cache.json` for `sso.refresh_token` before declaring auth dead. If tokens were saved, extract and manually create `.pypowerwall.auth`.
 - **Tesla OAuth on mobile is unreliable** — the Tesla app intercepts the `tesla://auth/callback` redirect before the user can read the code from the address bar. iPhone's "Open Links in Apps" toggle (Settings → Safari → turn OFF) helps but is not reliable. The two-machine flow (`authtoken` on a desktop) is far more dependable. Prefer recommending the desktop GUI approach first, falling back to manual PKCE code extraction only as a last resort — and even then, expect failure.

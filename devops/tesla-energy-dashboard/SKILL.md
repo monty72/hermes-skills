@@ -148,9 +148,13 @@ ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 \
 ## Scripts
 
 - `scripts/energy_api.py` — standalone backend API server with embedded Tesla token + auto-refresh. Run on port 8081.
-- `references/restart-survival.md` — recovery steps after a gateway restart kills background processes.
+- `scripts/ha_energy_bridge.py` — push live energy data to Home Assistant as REST sensors (bypasses failed Tesla/Teslemetry HA integration). See `references/ha-energy-bridge.md`.
 
-## Linked Files
+## References
+
+- `references/restart-survival.md` — recovery steps after a gateway restart kills background processes.
+- `references/combined-api-server.md` — combined proxy server pattern (static files + API proxy).
+- `references/ha-energy-bridge.md` — Home Assistant energy sensor bridge: create REST sensors from the local energy API when the HA Tesla/Teslemetry integration is down.
 
 ## API Endpoint
 
@@ -176,6 +180,35 @@ Sign convention:
 - `battery_kw`: negative = charging, positive = discharging
 - `grid_kw`: positive = importing, negative = exporting
 - `home_kw`: positive = home consuming
+
+**Balance check:** `solar_kw + battery_kw + grid_kw ≈ home_kw` (should roughly equal — a non-zero difference indicates measurement noise or internal Powerwall consumption, not a bug)
+
+## Troubleshooting
+
+### Stale Token — Auto-Refresh Might Not Have Fired
+
+The `energy_api.py` server's `refresh_access_token()` function only triggers on **401 HTTP errors** from API calls. If the server hasn't been polled in hours (e.g. dashboard not open, no cron jobs hitting `/api/energy`), the token sits stale. When you next query it, the first request fails, triggers a refresh, and the second succeeds — but this adds latency.
+
+To verify token freshness without waiting for a 401:
+```bash
+python3 -c "
+import re, time
+with open('/home/matth/energy-dashboard/src/api.py') as f:
+    content = f.read()
+expires = re.search(r'token_expires\s*=\s*(\d+)', content)
+if expires:
+    t = int(expires.group(1))
+    remaining = t - time.time()
+    print(f'Token expires in {remaining/3600:.1f}h ({'STALE - refresh needed' if remaining < 60 else 'OK'})')
+"
+```
+
+If stale, force a refresh by hitting the dashboard API once:
+```bash
+curl -s http://localhost:8081/api/energy 2>/dev/null || python3 -c "
+# Run a manual refresh
+exec(open('/home/matth/refresh_tesla.py').read())
+"
 
 ## Dashboard Features
 

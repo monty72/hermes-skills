@@ -4,76 +4,82 @@ Strategy for keeping LLM spend minimal while maintaining capability fallbacks.
 
 ## Cheapest Available Model
 
-### DeepSeek
+### Via Direct API
 
-| Model | Tier | Notes |
-|-------|------|-------|
-| `deepseek-v4-flash` | Cheapest | Fast, good for most tasks |
-| `deepseek-chat` | Mid | Default, balanced |
-| `deepseek-v4-pro` | Premium | Best quality, fallback only |
+| Model | Provider | Input Cost /M | Provider Config | Notes |
+|-------|---------|---------------|-----------------|-------|
+| `gpt-4o-mini` | LiteLLM / `custom` | ~$0.15 | `provider: custom`, `base_url: <proxy>/v1` | Fast, good quality, cheaper than DeepSeek |
+| `deepseek-v4-flash` | DeepSeek | ~$0.50 | `provider: deepseek` | Previous default, more expensive than gpt-4o-mini |
+| `deepseek-chat` | DeepSeek | Mid | `provider: deepseek` | Default, balanced |
+| `deepseek-v4-pro` | DeepSeek | Premium | `provider: deepseek` | Best quality, fallback only |
 
-### OpenAI
+### Via OpenRouter (router to cheapest)
 
-| Model | Tier | Notes |
-|-------|------|-------|
-| `gpt-5.4-nano` | Cheapest OpenAI | Newest generation, very cheap |
-| `gpt-4.1-nano` | Cheap | Older nano generation |
-| `gpt-4.1-mini` | Mid | Smarter, still cheap |
-| `gpt-4o-mini` | Legacy | Still cheap, older arch |
-| `gpt-5.4-mini` | Mid | Newer smart option |
+| Model | Route | Input Cost /M | Notes |
+|-------|-------|---------------|-------|
+| Gemini 2.0 Flash | `google/gemini-2.0-flash-001` | ~$0.10 | Very good quality for price |
+| Llama 3.1 8B | `meta-llama/llama-3.1-8b-instruct` | ~$0.06 | Fast, open-weight |
+| GPT-4o-mini | `openai/gpt-4o-mini` | ~$0.15 | Via OpenRouter routing |
 
-## Auto-Cheapest Cron Job
+### Free Tier
 
-Run a daily check at 8am to ensure the model is always set to the cheapest available:
+| Provider | Model | Limit | Config |
+|----------|-------|-------|--------|
+| Groq | Llama 3.1 8B, Mixtral | Rate-limited (30 req/min) | `GROQ_API_KEY` + `provider: custom`, `base_url: https://api.groq.com/openai/v1` |
+| Ollama (local) | hermes3:8b, qwen2.5, llama3.2 | Free, no rate limit | `provider: custom`, `base_url: http://localhost:11434/v1` |
 
-```bash
-hermes cron create "0 8 * * *" \
-  --name "cheapest-model-check" \
-  --deliver local \
-  --prompt "Check the current default model in Hermes config and if it's not the cheapest available option, switch to the cheapest. Use the OpenAI API to list available models and pick the cheapest nano/mini variant. Set model.default and model.provider accordingly. Report what was found and any changes made."
+## Using the `custom` Provider
+
+Hermes has a `custom` provider plugin (`plugins/model-providers/custom/`) that works with **any OpenAI-compatible endpoint** — including LiteLLM proxies, Ollama, vLLM, Groq, and local inference servers.
+
+### Configuration
+
+```yaml
+model:
+  provider: custom
+  base_url: <openai-compatible-base-url/v1>
+  default: <model-name>
+  api_key: ""    # optional — omit if the endpoint doesn't need auth
 ```
 
-The job runs silently (no delivery unless something changed).
+### Use Cases
+
+| Endpoint | base_url | Example model | Auth |
+|----------|----------|---------------|------|
+| LiteLLM proxy | `http://proxy-host:4000/v1` | `gpt-4o-mini` | Proxy handles its own key |
+| Ollama (local) | `http://localhost:11434/v1` | `hermes3:8b` | None |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.1-8b-instant` | `GROQ_API_KEY` |
+| Custom vLLM | `http://your-server:8000/v1` | Any served model | Varies |
+
+### ⚠️ Local Ollama Requires a GPU
+
+Local models are **not viable on CPU-only machines** — even a 3B model loads 9GB+ with a 64K context window (Hermes default) and can time out at 30+ seconds per generation. Only attempt local inference on a machine with:
+- A GPU (NVIDIA with 8GB+ VRAM, or Apple Silicon with unified memory)
+- Or accept very slow CPU inference for tiny models (<3B) with reduced context
+
+### Verifying a Custom Provider Works
+
+```bash
+# Quick test — the endpoint should speak OpenAI-compatible API
+curl -s --max-time 10 <base_url>/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"<model>","messages":[{"role":"user","content":"hi"}],"max_tokens":10}'
+```
 
 ## Switching Models
 
 ```bash
-# Change default model
-hermes config set model.default gpt-5.4-nano
+# For a direct provider (DeepSeek, Gemini, etc.)
+hermes config set model.provider deepseek
+hermes config set model.default deepseek-v4-flash
+hermes config set model.base_url "https://api.deepseek.com/v1"
 
-# Change provider (if switching between OpenAI, DeepSeek, Anthropic, etc.)
-hermes config set model.provider openai
+# For an OpenAI-compatible endpoint via custom provider (LiteLLM, Ollama, Groq, etc.)
+hermes config set model.provider custom
+hermes config set model.base_url http://localhost:11434/v1
+hermes config set model.default hermes3:8b
 
-# Clear base_url if switching from a provider that had a custom endpoint
-hermes config set model.base_url ""
-
-# Set fallback (for reliability, not cost)
+# Set fallback (for reliability when primary is down)
 # fallback_providers is stored as a JSON string in config.yaml
+hermes config set fallback_providers '[{"provider":"custom","model":"gpt-4o-mini","base_url":"http://192.168.1.121:4000/v1"}]'
 ```
-
-## Provider Economics
-
-| Provider | Cheapest Model | Why use |
-|----------|---------------|---------|
-| DeepSeek | `deepseek-v4-flash` | Generally cheapest per token overall |
-| OpenAI | `gpt-5.4-nano` / `gpt-4.1-nano` | More expensive but key also enables image gen, STT, TTS |
-| Anthropic | Claude Haiku | More expensive, best for coding |
-| OpenRouter | Various | Can route to cheapest across many providers |
-
-DeepSeek flash is cheaper than OpenAI nano on a per-token basis. Use DeepSeek for pure cost savings, OpenAI only when the same key is needed for image gen/STT/TTS.
-
-## Verifying the Active Model
-
-```bash
-# Check config
-grep -A5 '^model:' ~/.hermes/config.yaml
-
-# Test the model directly
-curl -s https://api.openai.com/v1/chat/completions \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-5.4-nano","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":10}' \
-  --max-time 30 | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if 'choices' in d else d.get('error',{}).get('message','?'))"
-```
-
-Note: GPT-5.x models use `max_completion_tokens` not `max_tokens`.

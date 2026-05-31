@@ -65,9 +65,11 @@ With no messaging platform configured, `deliver: origin` fails with 'platform te
 |---------------|--------------|-------|
 | ~62 files | 80 files | 18 new files |
 
-## Cron Job (Active)
+## Cron Job (Active — Tested)
 - Job ID: `7fea7151888b`
 - Name: Weekly Cloud Architecture Pattern
 - Schedule: `0 9 * * 1` (Mondays 9am)
-- Skills: github-auth, github-pr-workflow
+- Skills: none (github-auth triggers the injection scanner — see pitfall above)
 - Workdir: /home/matth/code/cloud-architecture
+- Deliver: local (no messaging platform in cron context)
+- **Test result:** First run generated `patterns/azure-policy-as-code.md` (741 lines) and committed+pushed to main. Pipeline confirmed working end-to-end.

@@ -1,0 +1,35 @@
+# Hermes Worker Config Template
+# Copy to ~/.hermes-worker-config/config.yaml on the remote worker
+# Replace <MAIN_HOST_IP> with the main agent's IP
+
+model:
+  base_url: http://<MAIN_HOST_IP>:4000
+  default: deepseek-v4-flash
+  provider: custom
+
+agent:
+  max_turns: 50
+  verbose: false
+
+terminal:
+  backend: local
+  timeout: 180
+  cwd: /home/matth
+
+web:
+  backend: ""
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  memory_char_limit: 2000
+  user_char_limit: 1000
+
+display:
+  personality: helpful
+  streaming: false
+
+skills:
+  external_dirs:
+    - /home/matth/.hermes-worker-skills/main
+    - /home/matth/.hermes-worker-skills/custom

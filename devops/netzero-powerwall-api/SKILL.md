@@ -71,10 +71,25 @@ print(resp.json())
 
 - `references/netzero-developer-api-spec.md` — Full NetZero Developer API specification including token generation from app, off-grid status requirements, Python examples, and edge cases from production use.
 
+## Direct Tesla Owner API (No NetZero)
+
+All Powerwall configuration settings can also be set directly via the Tesla Owner API — no NetZero token or subscription required. This is the fallback when NetZero is down, the token is expired, or you want to bypass NetZero entirely.
+
+| Setting | Owner API Endpoint | Body |
+|---------|-------------------|------|
+| Energy exports (+ grid charging) | `POST /api/1/energy_sites/{site_id}/grid_import_export` | `{"grid_export": "battery_ok", "grid_import": true}` (`battery_ok`, `pv_only`, `never`; `everything` accepted but stored as `battery_ok`) |
+| Operating mode | `POST /api/1/energy_sites/{site_id}/operation` | `{"default_real_mode": "autonomous"}` |
+| Backup reserve | `POST /api/1/energy_sites/{site_id}/backup` | `{"backup_reserve_percent": 20}` |
+| Storm watch | `POST /api/1/energy_sites/{site_id}/storm_mode` | `{"enabled": false}` |
+
+See `references/tesla-owner-api-fallback.md` for the full Owner API reference — token refresh flow, GET endpoints, configuration POSTs, verification patterns, common queries, and known pitfalls.
+
 ## Pitfalls
 
 - Token scope is limited to config + live status only — no firmware, no energy history
 - `off_grid_status` requires a paid Netzero subscription + Powerwall Pairing
 - Token is user-facing (from Netzero phone app Settings > Developer API), treat as sensitive
 - The `/config` endpoint returns `live_status` nested inside the config response — no separate `/live_status` endpoint needed
-- 403 errors mean the token expired or was revoked — regenerate from the Netzero app
+- 403 errors mean the token expired or was revoked — regenerate from the Netzero app, OR fall back to the Tesla Owner API (see `references/tesla-owner-api-fallback.md`)
+- When the HA Tesla integration shows all entities as `unavailable` with `restored: true`, the Tesla API token has likely expired. Check the energy dashboard backend at `~/energy-dashboard/src/energy_api.py` for stored tokens and try refreshing via Tesla OAuth (see `references/tesla-owner-api-fallback.md`)
+- **HA may use Teslemetry, not Tesla Fleet** — some users have the Teslemetry third-party integration instead of the official Tesla Fleet. The diagnostic differs: `auth_failed_subscription_required` means the Teslemetry subscription has lapsed, not just a stale token. See `references/tesla-owner-api-fallback.md` for the full diagnostic.

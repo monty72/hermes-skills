@@ -1,7 +1,7 @@
 ---
 name: hermes-setup-patterns
 description: "Common gotchas, workarounds, and setup patterns for configuring and installing Hermes Agent — gateway service, Telegram/Discord platforms, credential setup, and non-interactive automation of hermes CLI wizards."
-version: 1.0.0
+version: 1.1.0
 author: Agent
 created_by: agent
 ---
@@ -9,6 +9,18 @@ created_by: agent
 # Hermes Setup Patterns
 
 Known workarounds and patterns for Hermes setup that go beyond the CLI reference in the bundled `hermes-agent` skill. These cover non-obvious behaviors that can trip up automated or non-interactive setup.
+
+## Discord Platform Setup
+
+📘 See the dedicated **`discord-integration`** skill (`social-media/discord-integration`) for full Discord bot setup:
+- Creating a bot application on the Discord Developer Portal
+- Handling React SPA login (native setter pattern for credentials)
+- Token reset with password/2FA verification
+- Inviting the bot to your server
+- Configuring Hermes `config.yaml` for Discord delivery
+- Channel setup: `#general`, `#daily-digest`, `#content-ideas`, `#scripts`
+
+The Discord Developer Portal is a React SPA that the browser snapshot tool struggles with — always use `browser_console` with JS expressions for Discord automation.
 
 ## Gateway Service Installation (`hermes gateway install`)
 
@@ -387,13 +399,15 @@ HA auth failures after vault migration are typically caused by `HASS_TOKEN=***` 
 
 ## Model Cost Management
 
-See `references/model-cost-management.md` for the full strategy — cheapest model per provider, auto-cron job for daily cheapest check, and switching instructions.
+See `references/model-cost-management.md` for the full strategy — cheapest model per provider, switching instructions, and LiteLLM proxy setup.
 
 Key points:
-- DeepSeek `deepseek-v4-flash` is generally the cheapest model available
-- OpenAI `gpt-5.4-nano` is the cheapest OpenAI model
-- Set `fallback_providers` as a JSON string in config.yaml for reliability
-- GPT-5.x models use `max_completion_tokens` not `max_tokens`
+- **gpt-4o-mini via LiteLLM proxy is cheaper than DeepSeek V4 Flash** (~$0.15/M input vs ~$0.50/M). The `custom` provider works with any OpenAI-compatible endpoint — point `model.base_url` at the proxy.
+- For even cheaper: OpenRouter with Gemini 2.0 Flash (~$0.10/M input), Groq free tier (Llama 3.1 8B), or local Ollama (free but needs GPU — see below).
+- **Local Ollama models are NOT viable without a GPU** — even 3B models load 9GB+ with a 64K context and time out at 30+ seconds on CPU. Only attempt on GPU-equipped machines.
+- **The `custom` provider plugin** (in `plugins/model-providers/custom/`) is designed for OpenAI-compatible endpoints including LiteLLM, Ollama, vLLM, and any proxy that speaks the OpenAI API format. Set `model.provider: custom` + `model.base_url: <openai-compatible-url>`.
+- Set `fallback_providers` as a JSON array in config.yaml for reliability, e.g.: `[{"provider":"custom","model":"gpt-4o-mini","base_url":"http://192.168.1.121:4000/v1"}]`
+- GPT-5.x models use `max_completion_tokens` not `max_tokens`. DeepSeek models use `max_tokens`.
 
 ## Image Generation via OpenAI (Response Format Quirk)
 
@@ -419,6 +433,36 @@ with open("/tmp/output.png", "wb") as f:
 
 Also note: `gpt-image-2` accepts `size: "1024x1024"` and `quality: "standard"|"low"`.
 
+## MCP Serve Not Available
+
+`hermes mcp serve` imports `from mcp_serve import run_mcp_server` but the `mcp_serve` module is **not bundled with Hermes**. The `mcp-serve` pip package installs as `mcpserver` (a different top-level module name), so even `pip install mcp-serve` doesn't fix it.
+
+**Workaround:** Don't use `hermes mcp serve` to run remote agent instances. Instead, deploy a custom HTTP API server that wraps `hermes chat -q`:
+
+```python
+# Minimal worker API — lightweight HTTP task runner
+# Full reference: opencrawl-worker-delegation skill
+import json, subprocess, os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class TaskHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        task = json.loads(self.rfile.read(int(self.headers['Content-Length']))).get('task', '')
+        env = os.environ.copy()
+        env['HERMES_HOME'] = os.path.expanduser('~/.hermes-worker')
+        result = subprocess.run(
+            [os.path.expanduser('~/.hermes-worker/bin/hermes'), 'chat', '-q', task, '-Q'],
+            capture_output=True, text=True, timeout=300, env=env
+        )
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"status":"ok","output":result.stdout.strip()}).encode())
+
+HTTPServer(('0.0.0.0', 8081), TaskHandler).serve_forever()
+```
+
+This uses only Python stdlib, runs as a systemd user service, and provides `GET /health` + `POST /task`. See the `opencrawl-worker-delegation` skill (`autonomous-ai-agents/opencrawl-worker-delegation`) for the full implementation with error handling, config, and systemd template.
+
 ## Resources
 
 - Docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
@@ -426,3 +470,4 @@ Also note: `gpt-image-2` accepts `size: "1024x1024"` and `quality: "standard"|"l
 - The bundled `hermes-agent` skill (`autonomous-ai-agents/hermes-agent`) has the full CLI reference
 - FAL.ai docs: https://fal.ai/docs
 - Model cost management: `references/model-cost-management.md`
+- Remote worker delegation: `autonomous-ai-agents/opencrawl-worker-delegation`
