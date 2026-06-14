@@ -3,7 +3,8 @@ name: cloud-architecture-authoring
 description: >-
   Generate a comprehensive cloud architecture reference repository from scratch for a Head of Cloud Architecture —
   principles, standards, guardrails, patterns, blueprints (with cost estimates), checklists, ADR templates, and sample IaC code.
-  For Azure, AWS, or GCP. This is greenfield architecture-authoring, not system documentation.
+  For Azure, AWS, or GCP. This is greenfield architecture-authoring, not system documentation — though it also covers
+  documenting existing systems (ARCHITECTURE.md + LLD.md + diagram).
 tags: [architecture, cloud, azure, standards, guardrails, blueprints, patterns, adr, enterprise]
 ---
 
@@ -32,6 +33,8 @@ This user-type (Head of Cloud Architecture at a regulated enterprise) explicitly
 
 ## When to Use
 
+- The user says "I'm Head of Cloud Architecture..."
+
 - The user says "I'm Head of Cloud Architecture at {company}, help me with my job"
 - The user says they lead a horizontal team supporting vertical/domain teams
 - "Create a cloud architecture repo with principles, standards, and blueprints"
@@ -42,6 +45,35 @@ This user-type (Head of Cloud Architecture at a regulated enterprise) explicitly
 - "We need Backstage / a developer portal — what should it look like?"
 - "Help me with our FinOps / SRE / incident response / vendor assessment framework"
 - Any request for architecture governance, patterns, or self-service platform design
+- **"Write me a {domain} standard**" — backup, networking, security, observability, tagging, FinOps
+
+## Documenting Existing Systems
+
+For **documenting an existing system's architecture** (not creating greenfield standards), use the pattern from the archived `system-architecture-documentation` skill. This is a different class of task — the system already exists and you need to capture:
+
+1. **ARCHITECTURE.md** — Concise one-page system overview (50-80 lines). ASCII overview diagram, route list, stack summary, API list, host/network layout.
+2. **LLD.md** — Full low-level design (300-500 lines). Data flow, repo structure, frontend architecture, CI/CD, hosting/DNS, API backends, Hermes ecosystem, energy stack, dev workflow, security considerations, cost breakdown, roadmap.
+3. **Architecture diagram** — Dark-themed SVG for the visual layer (load the `architecture-diagram` skill for the template).
+
+### Workflow
+
+1. **Gather current state** via parallel `delegate_task` subagents:
+   - Task A: Hermes Agent config, skills, cron, scripts, auth
+   - Task B: Public website / dev-site — Astro pages, CI/CD, Vercel, DNS
+   - Task C: Energy stack — Tesla, Powerwall, HA, tunnels, listening ports
+   - Task D: Managed-agent provisioning system
+2. **Generate all three documents** — ARCHITECTURE.md (concise overview), LLD.md (full reference), architecture diagram HTML
+3. **Verify** — all docs render cleanly, diagram opens in browser
+4. **Commit** — `git add ARCHITECTURE.md LLD.md montygroup-architecture.html && git commit -m "docs: update system architecture"`
+
+### Key Distinctions from Greenfield Authoring
+
+| Dimension | Greenfield (this skill) | Existing System Docs |
+|-----------|------------------------|---------------------|
+| Audience | Platform lead, CTO | On-call engineer, new team member |
+| Content | Standards, guardrails, patterns | Routes, ports, endpoints, credentials |
+| Output | 50+ files in a repo | 3 files (ARCHITECTURE.md, LLD.md, diagram) |
+| Purpose | Define how to build | Record what's running |
 
 ## Critical Distinction: Platform Team vs Solution Architect
 
@@ -101,7 +133,8 @@ cloud-architecture/
 │   ├── naming-conventions.md  ← Resource prefixes, naming pattern, mandatory tags
 │   ├── networking.md          ← Hub-and-spoke, subnets, DNS, connectivity
 │   ├── security-baseline.md   ← Identity, network, data, compliance (GDPR/PCI/ISO/SOC2)
-│   └── observability.md       ← Metrics, logs, traces, alerts, SLOs, retention
+│   ├── observability.md       ← Metrics, logs, traces, alerts, SLOs, retention
+│   └── backup-dr-standard.md  ← Multi-cloud backup & DR (Azure/AWS/GCP native tooling)
 │
 ├── guardrails/                ← Policy guardrails & enforcement
 │   └── INDEX.md               ← 20-30 rules (cost/security/ops/compliance), each with: ID, rule, effect, remediation, environment tier
@@ -450,7 +483,86 @@ These are the artefacts you build before the exec asks for them:
 - **ADR template** — Include sections: Context, Options Considered, Decision, Consequences, Compliance (guardrail mapping), References
 - **Example ADRs** — Write 2-3 worked examples showing real decisions (e.g. "Why Cosmos DB over SQL for tracking state", "Why Event Hubs over Service Bus for high-throughput ingestion")
 
-### 11. AI Platform — Azure AI Foundry Document Suite
+### 11. Writing Operational Standards
+
+When the user asks for a domain-specific operational standard (backup, networking, security, observability, tagging, FinOps), use the **operational standard template** at `templates/operational-standard-template.md` as the skeleton. Every standard should follow the same 11-section structure so the repo feels cohesive.
+
+**When to write a standard vs other artefacts:**
+
+| Artefact | Purpose | Audience | Example |
+|----------|---------|----------|---------|
+| **Principle** | *Why* we do things | Everyone | "Resilience by Design" |
+| **Standard** | *What* must be done | Architects, engineers | "Multi-Cloud Backup Standard" — RTO/RPO tiers, policy configs |
+| **Blueprint** | *How* for a specific workload | Vertical teams | "Parcel Tracking — AKS + Cosmos DB + Event Hubs" |
+| **Golden Path** | *How* to ship a workload type | All developers | "Web API — App Service + SQL + APIM" |
+| **Guardrail** | *What is enforced* (policy) | Platform engineers | "COST-01: Require CostCentre tag (Deny)" |
+
+**Standard document structure (11 sections):**
+
+```
+1. Frontmatter (ID, owner, review cycle)
+2. Scope (covers, doesn't cover, environments)
+3. Tier / Classification Matrix (organisation taxonomy first)
+4. Provider-Specific Configuration (one per cloud: engine, service table, policy templates)
+5. Cross-Provider Scenarios (when/why clouds interact)
+6. Testing & Validation (cadence table + runnable checklist)
+7. Monitoring (metrics with P1/P3 thresholds)
+8. Cost Benchmarks (comparative table at standardised unit)
+9. Compliance Mapping (regulation → evidence per provider)
+10. Exemption Process (required — every standard needs an escape hatch)
+11. Related Documents (cross-references to sibling standards)
+```
+
+**Multi-cloud standards pattern:** One document with `AWS | Azure | GCP` columns — never three separate documents. The comparison table format reveals gaps (where a provider lacks a native equivalent) that prose hides. Explicitly call out providers without a native option — don't paper over it.
+
+**Key conventions (baked into the template):**
+- British English (organisation, colour, analyse)
+- Opinionated stance — "Do NOT use" is clearer than "Consider alternatives"
+- Decision tables over paragraphs
+- Costs are date-stamped (provider pricing changes quarterly)
+- Policy templates are copy-pasteable (include exact frequency, time, retention chain)
+- Cross-reference sibling standards in the repo
+- Every standard includes an exemption process or architects will ignore it
+
+**See also:** `templates/operational-standard-template.md` for the full skeleton with section-level decision notes. `references/backup-dr-session.md` for a worked example (CLOUD-BCDR-001 — 20+ services across 3 clouds).
+
+#### Companion Reference Architecture Diagrams
+
+Every operational standard or major pattern should include a **companion HTML diagram** in `reviews/reference-architecture-{topic}.html`. These are self-contained dark-theme SVGs that open in any browser with zero dependencies.
+
+Recommended layout for standards:
+- **Diagram 1** — The primary architecture: region pairs, vault/service structure, compliance boundary
+- **Diagram 2** — Decision flows or alternative patterns (e.g. self-managed vs managed service options)
+- **3 info cards** below the SVGs: key design decisions, when-to-pick matrix, summary metrics/trade-offs
+
+Use the `architecture-diagram` skill for the design system. The multi-cloud side-by-side pattern (provider A vs provider B vs provider C with comparison notes) is specific to standards documents and should be applied consistently.
+
+See `references/jetstream-waf-session.md` for a worked example including the HTML diagram creation workflow.
+
+#### Self-Managed vs Managed Service Comparison Patterns
+
+A recurring request class: "write me a pattern for {self-hosted} and native alternatives for Azure and GCP." This is a **comparison document** that helps decide whether to stay on self-managed or migrate to PaaS.
+
+**Trigger phrases:** "write me a pattern for {X} for {Y} and a native alternative for Azure and GCP"
+
+**Document structure:**
+
+1. **Architecture topology** — SVG/text diagram of the self-hosted HA deployment (Raft cluster, LB, multi-tenancy, DR)
+2. **Native Azure alternatives** — with decision gates at a concrete throughput/cost threshold (e.g. ">20K/s → Event Hubs, else Service Bus")
+3. **Native GCP alternative** — with clear mapping to JetStream-like features and honesty about what doesn't exist
+4. **Feature comparison matrix** — 15+ dimensions: throughput, latency, ordering, exactly-once, DR, cost, ops model, KV/object store, autoscaling, auth, retention
+5. **Cost comparison** at a standardised throughput unit — date-stamped, with break-even analysis against self-managed (JetStream's killer advantage: flat cost curve — same 3 VMs handle 10K/s or 12M/s)
+6. **Migration path** — phased dual-write → cutover → decommission with week estimates
+7. **When to avoid each option** — explicit anti-patterns per service
+8. **WAF assessment** — scored per-pillar evaluation committed as a sibling review artefact. See WAF self-assessment mandate below.
+
+**Key conventions:** British English. Decision tables over prose. All costs date-stamped. Explicit ops burden assessment (self-managed = "you patch OS, manage Raft quorum, run DR drills"). Companion reference architecture HTML diagrams at `reviews/reference-architecture-{topic}.html`.
+
+**WAF self-assessment mandate:** Every standard, pattern, or blueprint produced by this skill MUST include a companion WAF self-assessment committed as a sibling review artefact under `reviews/waf-alignment-{topic}.md`. Score each of the 6 pillars (Reliability, Security, Cost, Ops, Performance, Sustainability) and flag remaining gaps with concrete fixes. The self-assessment is the authorised response when the user asks "does this align with best practice?" — building it BEFORE the question is asked prevents the deliverable from being judged incomplete after delivery. Target: ≥90% across all pillars before presenting.
+
+See `references/jetstream-waf-session.md` for a worked example (JetStream on AVS vs Azure Service Bus/Event Hubs vs GCP Pub/Sub) including the throughput-at-cost-parity argument, stream sizing formula, mTLS requirements, monitoring dashboard spec, sustainability coverage, and the companion WAF score table that moved from 72% to 93% after gap resolution.
+
+### 12. AI Platform — Azure AI Foundry Document Suite
 
 When the user asks for Azure AI Foundry (or AI Studio, Azure OpenAI) documentation, the scope is fundamentally different from general operating model artefacts. AI workloads have distinct concerns that don't fit into the standard platform lifecycle sections.
 
@@ -474,7 +586,7 @@ When the user asks for Azure AI Foundry (or AI Studio, Azure OpenAI) documentati
 | **AI Gateway Pattern** | Multi-provider inference fallback (Azure → AWS Bedrock → GCP Vertex), LiteLLM/Portkey/Kong comparison, fallback strategy (429→fail, 5xx→fail, latency>10s→fail), provider endpoints table, authentication (gateway API keys scoped by team, provider creds in Key Vault), cost routing (cheapest provider within latency tolerance), Datadog observability, deployment options (LiteLLM on ACA, Portkey SaaS, Kong), operational runbook | When user mentions fallback or multi-provider |
 | **Architecture Diagram** | 4-layer visual SVG showing Foundry Hub, Projects, Network (Private Endpoints), Azure PaaS, Identity, and Developer tools. Open in browser, no dependencies. | Always — for exec presentations and review boards |
 
-### AI Foundry Documentation Pitfalls
+#### AI Foundry Documentation Pitfalls
 
 1. **Don't write generic AI docs.** The golden path must include concrete `az ml` CLI commands, actual pricing, and real UK region availability. Generic "use managed AI" is useless.
 2. **Model catalog must have decision logic, not just a list.** Teams need "when do I pick GPT-4o-mini vs o3-mini vs Llama 3.1-70B" with concrete decision trees, not a table of specs.
@@ -484,7 +596,7 @@ When the user asks for Azure AI Foundry (or AI Studio, Azure OpenAI) documentati
 6. **PTU sizing is a frequent question.** Provide a formula and worked examples, not just a rule of thumb.
 7. **Models change fast.** Note the date of every document and the model catalog version. Don't hardcode model versions that will be deprecated.
 
-### When to Build the Full AI Foundry Suite vs Selective Documents
+#### When to Build the Full AI Foundry Suite vs Selective Documents
 
 | User Signal | What to Build |
 |---|---|
@@ -497,7 +609,7 @@ When the user asks for Azure AI Foundry (or AI Studio, Azure OpenAI) documentati
 | "RAG architecture" | RAG Architecture + Model Catalog + Content Safety |
 | "What if Azure OpenAI goes down?" | AI Gateway pattern |
 
-### 12. Enterprise Tagging Standard
+### 13. Enterprise Tagging Standard
 
 When building the operating model, an exhaustive tagging standard is one of the highest-value single documents. It feeds EVERY other artefact — cost allocation, automation triggers, operational management, security compliance, governance enforcement.
 
@@ -528,7 +640,7 @@ When building the operating model, an exhaustive tagging standard is one of the 
 
 **Tag compliance reporting:** Weekly tag compliance dashboard, top-10 untagged resources report, monthly FinOps tag governance review, Tag Health Score target ≥ 95%.
 
-### 13. Strategy & Advisory Documents
+### 14. Strategy & Advisory Documents
 
 Users at this level (Head of Cloud Architecture, CTO-adjacent) will ask for strategic advice that isn't architecture documentation per se. These are one-off advisory outputs that extend the repo's value beyond documentation.
 
@@ -642,6 +754,8 @@ Write as checkbox lists with decision gates:
 13. **No strategic planning artefacts.** Roadmap templates, adoption playbooks, ownership matrices, exit strategies, and review archives are the artefacts execs ask for when they're planning. Build them before the question comes.
 
 14. **British English matters.** For UK enterprises, spelling and phrasing are a trust signal. Write "organisation", not "organization". Subagents will default to American English — set British English in the context field.
+
+15. **Standards are not blueprints.** A standard says *what* must be done and at what level (tiers with RPO/RTO targets). A blueprint says *how* to build one specific workload. Don't conflate them — the repo needs both, but they serve different audiences. Standards are read by all architects and enforced by policy. Blueprints are reference examples for vertical teams.
 
 ## Example Reference Architecture Skeleton
 
@@ -837,6 +951,8 @@ When `git reset --hard origin/main` was accidentally used and destroyed staged c
 - `references/golden-highway-session.md` — Output reference for the Golden Highway developer experience pattern suite (10 patterns + architecture diagram).
 - `references/ai-foundry-apptio-session.md` — Output reference for Azure AI Foundry (13 documents) and Apptio FinOps (4 documents) suites. Use as a pattern reference for AI platform and enterprise FinOps documentation.
 - `references/cloud-architecture-session-2.md` — Output reference for the second major session: Apptio FinOps operating model (11 integrations, auto-response workflows, budget management, unit economics), enterprise tagging standard (9 mandatory + 30 optional tags, Azure Policy + GCP Org Policy, tag lifecycle), FinOps RACI matrix (8 roles × 50+ activities across 8 domains), architecture diagram (5-layer SVG), monetisation strategy (5 angles with feasibility matrix), subagent assessment, and the cron-based weekly content generation setup. Use as a pattern reference for FinOps operating model and strategic advisory documents.
+- `references/backup-dr-session.md` — Output reference for the multi-cloud backup & DR standard (CLOUD-BCDR-001). Covers 20+ services across 3 clouds, RTO/RPO tiers, testing cadence, cost benchmarks, compliance mapping. Demonstrates the operational standard document pattern.
+- `references/jetstream-waf-session.md` — Output reference for the JetStream on AVS vs native Azure/GCP messaging pattern (MSG-001) and its WAF alignment assessment. Covers self-managed vs managed service comparison pattern, companion reference architecture diagrams, WAF assessment structure, and sustainability as the consistently weakest pillar. Also includes the migration path pattern (dual-write → cutover → decommission).
 
 ## Scripts
 
@@ -847,3 +963,5 @@ When `git reset --hard origin/main` was accidentally used and destroyed staged c
 - `ai-foundry-runbook.md` content overlaps with `self-service/incident-response/platform-runbook.md` — the AI Foundry runbook is AI-specific; the platform runbook is general. In a repo that has both, cross-reference but don't deduplicate.
 - `apptio-finops.md` extends the `finops/FRAMEWORK.md` section — if both exist, the Apptio pattern is the "applied" version of the framework.
 - `FINOPS-RACI.md` and `apptio-finops.md` are companion documents — the RACI references the operating model and vice versa.
+- `backup-dr-standard.md` and `business-continuity/PLATFORM-DR.md` are complementary but distinct — one covers workload-level backup, the other covers platform-level DR (ExpressRoute, Key Vault, Entra ID). Cross-reference but don't merge.
+- `templates/operational-standard-template.md` is the skeleton used by ALL operational standard documents (backup, networking, security, etc.). It is NOT a standard itself — it's a template for producing standards.

@@ -27,10 +27,17 @@ if command -v gh &>/dev/null && gh auth status &>/dev/null; then
 else
   AUTH="git"
   if [ -z "$GITHUB_TOKEN" ]; then
-    if [ -f ~/.hermes/.env ] && grep -q "^GITHUB_TOKEN=" ~/.hermes/.env; then
-      GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" ~/.hermes/.env | head -1 | cut -d= -f2 | tr -d '\n\r')
-    elif grep -q "github.com" ~/.git-credentials 2>/dev/null; then
-      GITHUB_TOKEN=$(grep "github.com" ~/.git-credentials 2>/dev/null | head -1 | sed 's|https://[^:]*:\([^@]*\)@.*|\1|')
+    # Try hermes-vault first (preferred for this environment)
+    if [ -f ~/.hermes/.env.local ] && command -v hermes-vault &>/dev/null; then
+      source ~/.hermes/.env.local 2>/dev/null
+      GITHUB_TOKEN=$(hermes-vault get GITHUB_TOKEN 2>/dev/null)
+    fi
+    # Fallback to .env or git-credentials
+    if [ -z "$GITHUB_TOKEN" ] && [ -f ~/.hermes/.env ]; then
+      GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" ~/.hermes/.env | head -1 | cut -d= -f2 | tr -d '\\n\\r')
+    fi
+    if [ -z "$GITHUB_TOKEN" ] && grep -q "github.com" ~/.git-credentials 2>/dev/null; then
+      GITHUB_TOKEN=$(grep "github.com" ~/.git-credentials 2>/dev/null | head -1 | sed 's|https://[^:]*:\\([^@]*\\)@.*|\\1|')
     fi
   fi
 fi
@@ -139,6 +146,19 @@ git branch -m master main
 # "Author identity unknown". We only set it per-repo with the above commands,
 # which avoids changing global config.
 ```
+
+**Alternative: vault credential helper (preferred when configured)**
+
+If the hermes-vault git credential helper is set (`git config --global credential.helper` returns `!~/.local/bin/git-credential-vault`), skip the embedded token and use a clean HTTPS URL:
+
+```bash
+# Same API create steps as above, but for git push use:
+git remote add origin https://github.com/$GH_USER/my-project.git
+git push -u origin main
+# The vault helper supplies credentials automatically — no token in URL or config
+```
+
+**Why this is better:** No token embedded in `.git/config`. The vault helper intercepts git's credential prompt and returns the token from the encrypted vault.
 
 **With gh:**
 

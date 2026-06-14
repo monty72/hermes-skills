@@ -1,14 +1,14 @@
 ---
 name: uk-energy-research
-description: "Research UK energy market: suppliers, tariffs, solar/battery installers, grid services, VPPs (Octopus, Axle, etc.), and affiliate/referral monetisation opportunities. Covers desktop research patterns for Ofgem data, supplier comparison, solar ecosystem, and referral economics."
+description: "Research UK energy market (suppliers, tariffs, solar/battery, VPPs) AND UK retail pricing/availability (Amazon, John Lewis, Currys, etc.) — Brave Search API research patterns, affiliate/referral monetisation opportunities, and browser automation workarounds."
 version: 1.0.0
 ---
 
-# UK Energy Market Research
+# UK Market Research
 
 ## Overview
 
-Researching the UK energy landscape: supplier information, tariff structures, solar/battery hardware and installers, grid services (VPPs), and monetisation opportunities through affiliate/referral links.
+Researching the UK energy landscape and UK retail pricing/availability: suppliers, tariff structures, solar/battery hardware and installers, grid services (VPPs), affiliate/referral monetisation opportunities, and product price checking at major UK retailers.
 
 ## Key Findings — May 2026
 
@@ -88,3 +88,50 @@ When someone signs up via your link:
 - **Awin's site** aggressively redirects to a "page not found" placeholder for some URLs. The advertiser directory URL is `awin.com/gb/advertiser-directory` but it may not work without being logged in. The sign-up flow works.
 - **Solar installer directories** need MCS certification checks. Don't list installers without MCS — it's a legal requirement for them to install solar/battery with 0% VAT and SEG eligibility.
 - **Tesla Powerwall compatibility with VPPs:** Tesla uses a proprietary protocol. Only inverters using open standards (Modbus RTU/TCP, SunSpec, CAN bus) can integrate with third-party VPPs like Axle. This is a fundamental hardware limitation, not something Axle can fix by writing an API integration — they'd need Tesla to open up bidirectional control on the Powerwall API.
+
+## UK Retail Price Research
+
+For checking product pricing and availability at UK retailers from within an agent session.
+
+### Known Blocked Retailers
+
+These consistently block browser automation:
+
+| Retailer | Block Pattern | Workaround |
+|----------|--------------|------------|
+| **John Lewis** | ERR_HTTP2_PROTOCOL_ERROR or 403 | Cannot scrape — give user the search URL |
+| **Currys** | Cloudflare "Just a moment..." | Cannot bypass — give user the search URL |
+| **AO.com** | Cloudflare challenge | Cannot bypass — give user the search URL |
+| **Argos** | "Access Denied" | Cannot bypass — give user the search URL |
+| **Google Shopping** | CAPTCHA page | Try Amazon only |
+
+### Amazon UK (Partially Works)
+
+Amazon.co.uk works with the browser tool, but with caveats:
+
+1. **Cookie banner** — must click "Accept" before results render
+2. **Extract via JS** — use `browser_console` with JS queries, not `browser_snapshot`:
+   ```javascript
+   Array.from(document.querySelectorAll('[data-component-type="s-search-result"]'))
+     .map(el => {
+       const title = el.querySelector('h2 a')?.textContent?.trim() || 'n/a';
+       const price = el.querySelector('.a-price')?.textContent?.trim().replace(/\s+/g,' ') || 'n/a';
+       const link = el.querySelector('h2 a')?.href || '';
+       return `${title} | ${price} | ${link}`;
+     })
+     .join('\n')
+   ```
+3. **Sort by price ascending**: `https://www.amazon.co.uk/s?k=PRODUCT&s=price-asc-rank`
+4. **Results are noisy** — includes accessories and unrelated items. Filter for exact brand + model.
+5. **Use category param**: `&i=kitchen`, `&i=electronics`, etc.
+
+### When to Hand Off to the User
+
+Do NOT keep trying blocked sites. After two failed attempts:
+1. Tell the user the site blocks automation
+2. Provide the direct search URL they can open manually: `https://www.johnlewis.com/search?q=PRODUCT`
+3. Include known RRP info so they can judge if the price is fair
+
+### Pitfalls
+- **Cookie banners on every Amazon session** — each new browser_navigate requires accepting cookies
+- **Safari on iPhone blocks Amazon product links** for certain categories — tell user to copy-paste the URL

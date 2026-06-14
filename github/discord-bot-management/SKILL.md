@@ -319,29 +319,110 @@ cronjob action=create \
 
 ---
 
+### React SPA Form Interaction (Discord Developer Portal)
+
+The Discord Developer Portal is a React SPA where standard `browser_snapshot` returns empty/partial accessibility trees. Use `browser_console` with JS for all interaction — never rely on ref IDs from snapshots:
+
+```js
+// Finding input fields
+browser_console({ expression: "document.querySelectorAll('input').length" })
+
+// Setting React-bound inputs — .value = alone does NOT trigger onChange
+browser_console({
+  expression: `
+    const email = document.querySelector('input[name="email"]');
+    const setter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(email), 'value'
+    ).set;
+    setter.call(email, 'user@example.com');
+    email.dispatchEvent(new Event('input', {bubbles: true}));
+    email.dispatchEvent(new Event('change', {bubbles: true}));
+  `
+})
+
+// Clicking buttons by text
+browser_console({
+  expression: "Array.from(document.querySelectorAll('button')).filter(b => b.innerText.includes('Copy')).forEach(b => b.click())"
+})
+```
+
+**OAuth scroll-reveal:** The Authorize page hides buttons behind a scrollable `.body__8a031` container. `window.scrollTo()` won't work:
+```js
+document.querySelector('.body__8a031').scrollTop = document.querySelector('.body__8a031').scrollHeight;
+```
+
+**hCaptcha at authorization:** Cannot be bypassed programmatically. Share a screenshot and ask the user to solve it.
+
+**Enabling gateway intents via JS:** The intents are `[role="switch"]` elements. Index 3 = Server Members Intent, Index 4 = Message Content Intent:
+```js
+var switches = document.querySelectorAll('[role="switch"]');
+switches[3].click();  // Server Members
+switches[4].click();  // Message Content (required)
+```
+
+**Navigating directly:** Go to `https://discord.com/developers/applications/{APP_ID}/bot` to skip sidebar navigation.
+
 ## 6. Gateway Integration
 
 For Hermes-to-Discord bridging:
 
 ```yaml
 # In ~/.hermes/config.yaml:
-gateway:
-  platforms:
-    discord:
-      enabled: true
-      token: "${DISCORD_BOT_TOKEN}"
-      # Channel-specific conversation routing:
-      # channels:
-      #   general: "chat"
-      #   scripts: "free-response"
+discord:
+  enabled: true
+  token: "${DISCORD_BOT_TOKEN}"
+  require_mention: true
+  free_response_channels: ''       # Bot responds without @mention in these channels
+  allowed_channels: ''             # Restrict to channel IDs
+  auto_thread: true
+  thread_require_mention: false
+  history_backfill: true
+  history_backfill_limit: 50
+  reactions: true
+  channel_prompts: {}              # Per-channel instruction overrides
+  # Example channel prompts:
+  # channel_prompts:
+  #   daily-digest: "You are a daily digest assistant..."
+  #   scripts: "You write and explain code..."
+  dm_role_auth_guild: ''
+  server_actions: ''
 ```
 
-After updating config, restart the gateway:
+### Standard Channel Layout
+| Channel | Purpose |
+|---------|---------|
+| #general | Main communication |
+| #daily-digest | Automated daily summaries |
+| #content-ideas | Creative brainstorming |
+| #scripts | Code output, automation results |
+
+### Delivery Targeting
+- `discord` — home/default channel
+- `discord:channel_id` — specific channel
+- `discord:channel_id:thread_id` — specific thread
+
+Use `send_message(action='list')` to discover available targets.
+
+### Cron Job Delivery to Discord
+When creating cron jobs for Discord output, set the `deliver` field:
+```yaml
+deliver: "discord:123456789"  # specific channel ID
+```
+
+### Gateway Restart Protocol
+After config changes, restart the gateway:
 ```bash
 hermes gateway restart
 ```
 
 **⚠️ Gateway restart kills the active agent session.** Ask the user first or wait for a natural break.
+
+Verify connection:
+```bash
+grep -E "(discord|connected|failed)" ~/.hermes/logs/gateway.log | tail -10
+```
+
+**Troubleshooting PrivilegedIntentsRequired:** If the gateway crashes with `discord.errors.PrivilegedIntentsRequired`, enable intents at the Developer Portal → Bot → Privileged Gateway Intents, then `systemctl --user restart hermes-gateway`. The error goes to journalctl as: `Shard ID None is requesting privileged intents`. After fixing, check `journalctl --user -u hermes-gateway --no-pager -n 10` for 0 Discord errors.
 
 ---
 

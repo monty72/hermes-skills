@@ -1,6 +1,6 @@
 ---
 name: static-site-deployment
-description: "Deploy static HTML/CSS sites to public URLs — Surge.sh, localhost.run tunnels, GitHub Pages, or raw file hosts."
+description: "Deploy static HTML/CSS/JS sites to public URLs — Surge.sh, localhost.run tunnels, GitHub Pages, Vercel + GitHub Actions, Cloudflare Tunnel, Proxmox LXC — plus post-deployment security hardening (headers, CORS, CSP, auth checks)."
 version: 1.0.0
 author: Hermes Agent
 ---
@@ -85,6 +85,35 @@ ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 \
 # The output prints the URL: https://<hash>.lhr.life
 ```
 
+### Vite + localhost.run: allowedHosts
+
+When tunneling a Vite dev server through localhost.run, Vite blocks the tunnel hostname by default:
+
+```
+Blocked request. This host ("<hash>.lhr.life") is not allowed.
+```
+
+**Fix:** Set `allowedHosts: true` in vite.config.ts:
+
+```typescript
+export default defineConfig({
+  server: { allowedHosts: true, ... },
+})
+```
+
+### Python Proxy Server: Serve SPA + Proxy API from One Port
+
+When you have a static SPA that calls a separate API backend, and you want to expose both through a single tunnel, use a Python proxy server instead of `python3 -m http.server`:
+
+```bash
+npm run build                    # Build SPA → dist/
+python3 api.py &                 # Start API backend (port 5011)
+python3 serve.py &               # Serves dist/ + proxies /api → localhost:5011
+ssh -R 80:localhost:5173 nokey@localhost.run   # Tunnel both through one URL
+```
+
+The proxy server (`serve.py`) subclasses `SimpleHTTPRequestHandler` and overrides `do_GET`/`do_POST`/`do_DELETE` — any `/api/*` request gets forwarded to the backend, everything else serves static files. See `references/python-proxy-server.md` for the full implementation.
+
 ## Pitfalls:
 - **URL changes every session** (random hash) — must re-fetch each time
 - **Tunnel is SLOW to connect** — it can take 15-45s to print the URL. Don't panic. Use `process(action='wait', timeout=60)` on the background process. If the URL doesn't appear after 60s, the remote forward likely failed and you should kill + retry.
@@ -148,6 +177,11 @@ Full-stack CI/CD: Astro framework → GitHub Actions → Vercel deploy. This is 
 ```bash
 cd /path/to/project
 
+# Retrieve Vercel token from hermes-vault (if configured)
+source ~/.hermes/.env.local 2>/dev/null
+export PATH="$HOME/.local/bin:$PATH"
+VERCEL_TOKEN=$(hermes-vault get VERCEL_TOKEN)
+
 # Link project to Vercel (creates .vercel/project.json)
 npx vercel link --token $VERCEL_TOKEN --yes --cwd .
 
@@ -200,7 +234,7 @@ jobs:
 
 Then add `VERCEL_TOKEN` as a GitHub Actions secret on the repo.
 
-### Git push with PAT (no gh CLI)
+### Git push with PAT (no gh CLI) — Method A: embedded token
 
 When `gh` is unavailable, create the repo and push via API + git:
 
@@ -228,6 +262,36 @@ GH_USER=$(curl -s -H "Authorization: bearer $GITHUB_TOKEN" \
 git remote add origin https://$GH_USER:$GITHUB_TOKEN@github.com/$GH_USER/my-repo.git
 git push -u origin main
 ```
+
+### Git push with PAT (no gh CLI) — Method B: vault credential helper (preferred)
+
+If the hermes-vault git credential helper is configured (`git config --global credential.helper` returns `!~/.local/bin/git-credential-vault`), you can use a clean HTTPS URL with no token embedded. The helper authenticates automatically:
+
+```bash
+# 1. Create repo via API (from vault)
+source ~/.hermes/.env.local 2>/dev/null
+export PATH="$HOME/.local/bin:$PATH"
+TOKEN=$(hermes-vault get GITHUB_TOKEN)
+
+curl -s -X POST -H "Authorization: bearer $TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/user/repos \
+  -d '{"name":"my-repo","private":false,"description":"...","auto_init":false}'
+
+# 2. Set local git identity (per-repo, avoids changing global config)
+git config user.email "you@example.com"
+git config user.name "Your Name"
+
+# 3. Init and commit
+git init && git branch -m main
+git add -A && git commit -m "Initial commit"
+
+# 4. Add clean remote (no token — credential helper supplies it)
+git remote add origin https://github.com/YOUR_USERNAME/my-repo.git
+git push -u origin main
+```
+
+**Why Method B is preferred:** No token embedded in git remote URL config, reducing credential leak surface. The vault helper automatically responds to git's auth prompts with the correct credentials.
 
 ### Switch DNS to Vercel
 
@@ -259,6 +323,9 @@ done
 7. **`require()` fails in Astro's ESM context** — `.astro` frontmatter runs in ESM. Never use `require('os')`, `require('fs')` etc. Use `import os from 'node:os'` instead for server-side system metrics in frontmatter.
 8. **Template literals in JSX expression blocks** — esbuild can choke on backtick template literals inside `{ }` expression blocks in `.astro` files. The error looks like `Unexpected "const"` at column 776 (a transpiled single-line column). Fix: use string concatenation (`'foo' + bar`) instead of backticks inside JSX blocks (`\`foo ${bar}\``).
 - `cloudflared tunnel run --config path` vs `cloudflared tunnel --config path run` — the options must come BEFORE the subcommand. `cloudflared tunnel run` interprets `--config path` as an unknown flag and prints help instead of running. Correct: `cloudflared tunnel --config path run`.
+- **Vite allowedHosts** — Tunnels (localhost.run, etc.) use random hostnames that Vite blocks by default. Set `allowedHosts: true` in vite.config.ts when behind a tunnel.
+- **nginx auth_basic inheritance** — If the server block has `auth_basic`, ALL location blocks inherit it unless they explicitly set `auth_basic off;`. Always add `auth_basic off;` to proxy locations for APIs.
+- **Python serverless + SQLite** — Vercel/Netlify serverless runtimes have ephemeral read-only filesystems. Flask APIs using SQLite must run on a VPS or Proxmox LXC, not as a serverless function.
 
 Deploy to a Proxmox LXC container on your own hardware. The LAN IP is permanent. See **`proxmox-host-creation`** skill for full provisioning details.
 
@@ -413,6 +480,8 @@ See also: `cloudflare-dns-management` (DNS records, tunnels, HTTPS), `proxmox-ho
 | `references/astro-vercel-cicd-pattern.md` | Full Astro 5 scaffold with GitHub Actions CI/CD and Vercel deployment |
 | `references/vercel-tunnel-migration.md` | Migrating from Cloudflare Tunnel to Vercel (DNS swap, API subdomain, tunnel ingress update) |
 | `references/nginx-basic-auth.md` | Nginx HTTP Basic Auth setup — htpasswd, config snippets, testing, Cloudflare compatibility |
+| `references/react-vite-gh-vercel.md` | Full Vite+React → GitHub API → Vercel deploy workflow (no gh CLI, uses vault credential helper) |
+| `references/proxmox-lxc-api-deployment.md` | Deploy Flask API + SQLite on Proxmox LXC with systemd + nginx proxy |
 
 ## Securing with Basic Auth
 
@@ -494,6 +563,51 @@ Delete or comment out the `auth_basic` lines from the config, then reload:
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
+```
+
+## Post-Deployment Security Hardening
+
+After a site is live, run this systematic audit to check for common exposures. See the archived `web-app-security-hardening` skill for the full reference with detailed CLI commands.
+
+### Phase 1: Reconnaissance
+
+```bash
+# Check live HTTP response headers
+curl -sI 'https://targetdomain.com' | grep -iE 'access-control|x-content|x-frame|content-security|strict-transport|server|x-powered-by'
+
+# Check page source for internal infrastructure leaks
+curl -s https://targetdomain.com | grep -oE '(192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|localhost|proxmox|hass|powerwall)'
+```
+
+### Phase 2: Fix Common Exposures
+
+| Issue | Fix |
+|-------|-----|
+| Internal IPs in page source | Replace with generic labels |
+| `Access-Control-Allow-Origin: *` | Restrict to specific origins |
+| Missing security headers | Add CSP, XFO, HSTS, Permissions-Policy |
+| Missing API authentication | Add Basic Auth, API key, or JWT |
+| Public repo with secrets | Make repo private, purge history |
+
+### Essential Security Headers
+
+| Header | Example |
+|--------|---------|
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline';` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+
+Add these via `vercel.json`, nginx config, or Cloudflare edge rules.
+
+### Phase 3: Verify
+
+```bash
+curl -sI 'https://targetdomain.com' | grep -iE 'access-control|x-content|x-frame|content-security'
+curl -sD - 'https://api.targetdomain.com/endpoint' -H 'Origin: https://evil.com' | grep -i 'access-control-allow-origin'
+curl -s -w '%{http_code}' 'https://api.targetdomain.com/api/health'
 ```
 
 ## Verification

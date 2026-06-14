@@ -1,9 +1,9 @@
 {
-  "last_report_path": null,
-  "last_run_at": "2026-05-24T09:49:14.982649+00:00",
-  "last_run_duration_seconds": null,
-  "last_run_summary": "deferred first run — curator seeded, will run after one interval; use `hermes curator run --dry-run` to preview now",
-  "last_run_summary_shown_at": null,
+  "last_report_path": "/home/matth/.hermes/logs/curator/20260607-125212",
+  "last_run_at": "2026-06-07T12:52:12.304999+00:00",
+  "last_run_duration_seconds": 479.005091,
+  "last_run_summary": "auto: no changes; llm: Now I'll compile the final structured summary.\n\n## Curator Summary\n\n**9 skills archived** from 19 agent-created skills (47% reduction). All 9 were absorbed into class-level umbrellas — no prunings.\n\n### Clusters Processed\n\n1. **Hermes Admin…\narchived 9 skill(s):\n  • automated-email-sending → cloudflare-dns-management\n  • content-site-builder → uk-resource-hub-builder\n  • hermes-backup → hermes-setup-patterns\n  • ollama-server → litellm-proxy\n  • provider-usage-tracking → hermes-setup-patterns\n  • site-design-unification → uk-resource-hub-builder\n  • system-architecture-documentation → cloud-architecture-authoring\n  • uk-retail-research → uk-energy-research\n  • web-app-security-hardening → static-site-deployment\nfull report: hermes curator status\nkeep an umbrella stable: hermes curator pin cloud-architecture-authoring",
+  "last_run_summary_shown_at": "2026-06-07T12:52:12.304999+00:00",
   "paused": false,
-  "run_count": 0
+  "run_count": 2
 }

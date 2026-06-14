@@ -1,9 +1,9 @@
 ---
 name: uk-resource-hub-builder
-description: "Build a comprehensive UK-focused resource hub / directory site — research, structure, SVG illustrations, monetization layers (shop, newsletter, affiliate disclosure), and deployment. Covers the full lifecycle from content gathering to a live permanent URL."
+description: "Build comprehensive UK-focused resource hub / directory sites — research methodology, site structure, SVG illustrations, tabbed UI, site-wide design unification (CSS class system extraction), monetization layers (shop, newsletter, affiliate disclosure), and deployment. Full lifecycle from content gathering to live URL."
 version: 1.2.0
 author: Hermes Agent
-related_skills: [content-site-builder, brave-web-search, modern-astro-ci-cd-setup]
+related_skills: [brave-web-search, modern-astro-ci-cd-setup]
 ---
 
 # UK Resource Hub Builder
@@ -12,7 +12,7 @@ Use this skill when building a **resource directory / hub site** focused on a UK
 
 For the site-wide navigation bar pattern (sticky nav with category hover-dropdowns), see `references/site-wide-nav-pattern-astro.md` in the `modern-astro-ci-cd-setup` skill — this is the UI that wraps the resource hub pages.
 
-Note: For a more general content site builder (any topic, not just UK), see `content-site-builder`. For the Brave Search API research commands, see `brave-web-search`.
+For the Brave Search API research commands, see `brave-web-search`. For data research methodology (Brave Search, Wikipedia, Wayback Machine, fallback chain), see `references/data-research-patterns.md`.
 
 ## The Pattern
 
@@ -261,6 +261,47 @@ Product templates that work for any UK resource site:
 
 ### 5. Octopus Energy Referral (for energy/solar hubs)
 See `references/uk-energy-affiliate-landscape.md` for the full supplier-by-supplier affiliate breakdown, cashback routes, and proven placement patterns.
+
+## Site-Wide Design Unification
+
+When you have a multi-page Astro site where pages have drifted in styling, use this pattern to extract a shared CSS class system from a reference page and apply it uniformly. This is a maintenance task for existing sites (not initial build).
+
+### Workflow
+
+1. **Identify the reference page** — the one with the desired look (usually the most polished or recently built page)
+2. **Extract CSS classes** from the reference page into a shared `global.css`:
+   - Page headers: `.content-header`, `.content-header-back`, `.content-header-title`, `.content-header-subtitle`
+   - Cards: `.content-card`, `.section-card`, `.product-card`
+   - Navigation pills: `.pill-link`
+   - Status/metric blocks: `.stat-card`, `.stat-card-label`, `.stat-card-value`
+   - Info banners: `.info-banner`, `.info-banner-blue`, `.info-banner-amber`, `.info-banner-green`
+   - Badges: `.badge`
+   - Tabs (if needed): `.cm-tabs`, `.cm-tab`, `.cm-tab-content`
+3. **Use CSS variables** (e.g. `--color-lo-text`, `--color-lo-primary`) inside utility classes — avoid hardcoded hex values
+4. **Refactor each page** — replace inline classes with shared utilities:
+   - `text-sm text-[#6b7280] hover:text-[#111827]` → `content-header-back`
+   - `px-3 py-1.5 rounded border border-[#e5e7eb]` → `pill-link`
+   - Hardcoded `text-[#111827]` → `text-lo-text` or `text-[#111827]` shared variable
+5. **Build & verify** — `npm run build` then check all routes render cleanly
+6. **Deploy** — commit + push to trigger Vercel auto-deploy
+
+### Pitfalls
+- **⚠️ Do NOT use `@apply` with custom classes in Tailwind v4** — it fails at build time. Apply classes directly in HTML.
+- **Compare CSS variables before changing** — reference page may already share the same palette
+- **Hardcoded hex colours in JSX templates** need separate patches from CSS classes
+- **JS-generated HTML** (calculator results, deal feeds) may hardcode colours in template literals
+- **JS-generated HTML** (calculator results, deal feeds) may hardcode colours in JS template literals — patch those separately
+
+### Reference: MC v4 → Clean White Color Mapping
+
+| MC v4 Dark/Light Class | Clean White Equivalent |
+|------------------------|----------------------|
+| `text-lo-text` | `text-[#111827]` |
+| `text-lo-text-muted` | `text-[#6b7280]` |
+| `bg-lo-bg-alt` | `bg-[#f9fafb]` |
+| `border-lo-border` | `border-[#e5e7eb]` |
+| `bg-lo-primary` | `bg-[#6b21a8]` |
+| `pixel-grid` / `card-lift` | Remove entirely |
 
 ## Deployment to LXC Container
 

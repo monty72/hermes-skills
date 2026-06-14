@@ -266,18 +266,13 @@ For print documents, text should be at least 12pt.
 
 For 1920×1080 slide decks, text should generally be 24px or larger.
 
-## React Guidance for Standalone HTML
+## React Guidance: Standalone HTML vs. Vite Project
 
-Use plain HTML/CSS/JS by default.
+Two distinct modes — choose based on the user's request:
 
-Use React only when:
+### Mode A: React in Standalone HTML (CDN)
 
-- the artifact needs meaningful state
-- variants/toggles are easier as components
-- interaction complexity warrants it
-- the target implementation is React/Next.js and fidelity matters
-
-If using React from CDN in standalone HTML:
+Use when the user asks for a "prototype" or "mockup" without specifying a framework. Produces one self-contained file.
 
 - pin exact versions
 - avoid unpinned `react@18` style URLs
@@ -286,7 +281,41 @@ If using React from CDN in standalone HTML:
 - give global style objects specific names, e.g. `commandPaletteStyles`, `deckStyles`
 - if splitting Babel scripts, explicitly attach shared components to `window`
 
-If building inside a real repo, use the repo's package manager and component architecture instead.
+### Mode B: Vite + React + TypeScript Scaffolding
+
+Use when the user says **"use react scaffolding"**, **"react project"**, or **"build a full app"** — they want a real project structure with modules, not a single HTML file.
+
+Workflow:
+
+1. **Scaffold** — run `npm create vite@latest <name> -- --template react-ts` in the target directory
+2. **Install deps** — `cd <name> && npm install`. Add icon libs proactively: `npm install lucide-react` (lightweight, no treeshaking hassle). Avoid heavy UI frameworks (MUI, Chakra) unless the user asks — the point is a lean mockup.
+3. **Design system first** — write a single `src/index.css` with CSS custom properties for the entire palette before writing any component. Dark theme cyberpunk palette example:
+   ```css
+   :root {
+     --bg-primary: #07070d; --bg-surface: #12121f;
+     --border-primary: #1e1e35;
+     --text-primary: #e8e8f0; --text-secondary: #a0a0b8;
+     --accent-purple: #a855f7; --accent-cyan: #22d3ee;
+   }
+   ```
+4. **Build component tree** — pages in `src/components/`, sub-components in subdirectories. Each file is a default-exported function component with TypeScript props interface.
+5. **Handle `verbatimModuleSyntax`** — Vite's default tsconfig has this enabled. Type-only imports MUST use `import type { X }` syntax:
+   ```tsx
+   // ✓ Correct
+   import type { AgentOption } from '../types'
+   import { useState } from 'react'
+
+   // ✗ Compiler error
+   import { AgentOption } from '../types'
+   ```
+   Additionally, React import for JSX is not needed in React 18+ with the new JSX transform. Unused `import React from 'react'` will also fail under `verbatimModuleSyntax`.
+6. **Verify** — run `npx tsc --noEmit` first (catches type errors fast), then `npm run build` for the full production build. Fix all TypeScript errors before reporting done.
+7. **Report** — include the exact file tree, build status (green/red), and the `npm run dev` command.
+
+Pitfalls:
+- Vite's `verbatimModuleSyntax` in `tsconfig.app.json` WILL reject `import { Type }` when it should be `import type { Type }`. Fix all type imports on the first tsc pass, don't defer.
+- `npm create vite@latest` may prompt for confirmation if the directory exists — use `--template react-ts` and a fresh directory name.
+- lucide-react icons are tree-shaken by Vite; they add ~40KB to the bundle but are the most reliable icon lib for agent-generated React. Do NOT fall back to emoji or inline SVGs for icons unless the user objects to the dep.
 
 ## Deck Rules
 
@@ -591,3 +620,7 @@ You are running in CLI/API mode, not hosted Claude Design. Ignore references to 
 - Do not under-ask for high-fidelity work with no brand context.
 - Do not produce generic SaaS layouts and call them designed.
 - Do not claim browser verification unless it actually happened.
+
+## Reference Files
+
+- `references/vite-react-scaffolding-recipe.md` — Full recipe for Vite + React + TypeScript scaffolding: project structure, dark cyberpunk design system tokens, component architecture rules, build verification sequence, and common pitfalls (verbatimModuleSyntax, unused React imports, font setup). Load this when the user asks for "react scaffolding" or a "React project."

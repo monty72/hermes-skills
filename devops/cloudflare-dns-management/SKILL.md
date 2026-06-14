@@ -1,6 +1,6 @@
 ---
 name: cloudflare-dns-management
-description: "Manage Cloudflare DNS zones, records, API tokens, and tunnel routing — create/update/delete DNS records, authenticate with API tokens, install cloudflared, and configure Cloudflare Tunnel for permanent HTTPS on custom domains."
+description: "Manage Cloudflare DNS zones, records, API tokens, tunnel routing, and programmatic email sending — create/update/delete DNS records, authenticate with API tokens, install cloudflared, configure Cloudflare Tunnel for permanent HTTPS, and send emails from custom domains via Gmail SMTP relay."
 version: 1.3.0
 author: Hermes Agent
 ---
@@ -440,10 +440,148 @@ For a local server behind a dynamic IP or CGNAT, use a tunnel:
 
 # Once named tunnel is set up, create a CNAME:
 curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer *** \
   -H "Content-Type: application/json" \
   -d '{"type":"CNAME","name":"mc","content":"<tunnel-id>.cfargotunnel.com","ttl":120,"proxied":true}'
 ```
+
+## Programmatic Email Sending
+
+After Email Routing is configured in the Cloudflare dashboard and MX/SPF records are set up (see `references/email-dns-records.md`), use this section to send programmatic emails FROM your custom domain THROUGH Gmail SMTP relay.
+
+### Prerequisites
+
+- Cloudflare Email Routing enabled + MX/SPF/DKIM records in place (via dashboard)
+- Gmail account with **2-Step Verification** enabled
+- **App Password** generated at https://myaccount.google.com/apppasswords (select Mail + Other, name it, copy the 16-char password)
+
+### Gmail SMTP Settings
+
+| Setting | Value |
+|---------|-------|
+| Host | `smtp.gmail.com` |
+| Port | `587` (STARTTLS) |
+| User | Full Gmail address |
+| Password | App Password (16 chars, keep internal spaces) |
+
+### Method A: Python smtplib (Recommended)
+
+Save as `~/.hermes/scripts/send-email.py`:
+
+```python
+import smtplib, ssl, os
+from email.mime.text import MIMEText
+
+CONFIG = {
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "address": os.environ.get("EMAIL_ADDRESS", ""),
+    "password": os.environ.get("EMAIL_PASSWORD", ""),
+    "default_to": os.environ.get("EMAIL_DEFAULT_TO", "user@example.com"),
+}
+
+def send_email(to, subject, body):
+    msg = MIMEText(body, _charset="utf-8")
+    msg["From"] = f"Your Bot Name <{CONFIG['address']}>"
+    msg["To"] = to
+    msg["Subject"] = subject
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP(CONFIG["smtp_host"], CONFIG["smtp_port"], timeout=60) as s:
+        s.starttls(context=ctx)
+        s.login(CONFIG["address"], CONFIG["password"])
+        s.sendmail(CONFIG["address"], [to], msg.as_string())
+
+# One-liner for quick sends:
+python3 -c "
+import smtplib, ssl
+from email.mime.text import MIMEText
+msg = MIMEText('Body')
+msg['From'] = 'Bot <bot@yourdomain.com>'
+msg['To'] = 'you@example.com'
+msg['Subject'] = 'Subject'
+with smtplib.SMTP('smtp.gmail.com', 587, timeout=60) as s:
+    s.starttls(context=ssl.create_default_context())
+    s.login('sender@gmail.com', '<app-password>')
+    s.sendmail('bot@yourdomain.com', ['you@example.com'], msg.as_string())
+"
+```
+
+**⚠️ Timeout:** Gmail SMTP can be slow (5-30 seconds). Always use `timeout=60`.
+
+### Method B: msmtp (Lightweight CLI)
+
+```bash
+sudo apt-get install -y msmtp msmtp-mta
+```
+
+Config at `~/.msmtprc` (chmod 600):
+```toml
+defaults
+auth on
+tls on
+tls_starttls on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+
+account gmail
+host smtp.gmail.com
+port 587
+from bot@yourdomain.com
+user sender@gmail.com
+password <app-password>
+
+account default : gmail
+logfile ~/.hermes/logs/msmtp.log
+```
+
+Usage:
+```bash
+echo "Body text" | msmtp recipient@example.com
+```
+
+**Pitfall:** msmtp lacks a `--timeout` flag. If it hangs, use the Python method instead.
+
+### Custom From Address
+
+Gmail SMTP allows a custom `From` header even though the envelope sender is the Gmail address:
+```python
+msg["From"] = "Bot Name <bot@yourdomain.com>"
+msg["Reply-To"] = "bot@yourdomain.com"
+```
+
+Set the envelope sender too for cleaner headers:
+```python
+server.sendmail("bot@yourdomain.com", [to], msg.as_string())
+```
+
+### Vault Integration
+
+Store credentials in the Hermes vault:
+```bash
+hermes-vault set EMAIL_ADDRESS "sender@gmail.com"
+hermes-vault set EMAIL_PASSWORD "xxxx xxxx xxxx xxxx"
+```
+
+For msmtp config, write the password directly (file is 0600). For Python, read from vault at runtime:
+```python
+import subprocess
+addr = subprocess.run(["hermes-vault", "get", "EMAIL_ADDRESS"], capture_output=True, text=True).stdout.strip()
+pwd = subprocess.run(["hermes-vault", "get", "EMAIL_PASSWORD"], capture_output=True, text=True).stdout.strip()
+```
+
+### Deliverability Testing
+
+If emails land in spam:
+1. Check SPF includes `_spf.email.cloudflare.net` or the relay domain
+2. Verify DKIM is set up (Cloudflare dashboard auto-generates the key if Email Routing is enabled)
+3. Add DMARC: `v=DMARC1; p=none`
+4. Warm up reputation by sending low volumes initially
+
+### Pitfalls
+- **Gmail App Passwords require 2FA** — account MUST have 2-Step Verification enabled
+- **App Password includes spaces** — use as-is (`xxxx xxxx xxxx xxxx`) in smtplib.login()
+- **SMTP timeout on first send** — Gmail can take 10-30 seconds. Use `timeout=60`.
+- **MX + CNAME cannot coexist at apex** — DNS RFC prohibits this. Always check for apex CNAME before adding MX records.
+- **Cloudflare dashboard + Email Routing: API-only cannot enable** — DNS:Edit token cannot enable Email Routing. The dashboard button is required.
 
 ## Pitfalls
 

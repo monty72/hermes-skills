@@ -1,6 +1,6 @@
 ---
 name: litellm-proxy
-description: Deploy, configure, and manage a LiteLLM proxy server — multi-model OpenAI-compatible endpoint with systemd service, auto-restart, health monitoring, and model routing configuration.
+description: Deploy, configure, and manage a LiteLLM proxy server and/or Ollama local inference — multi-model OpenAI-compatible endpoint with systemd service, auto-restart, health monitoring, model routing configuration, local model management, and Open WebUI deployment.
 tags: [litellm, proxy, llm, openai-compatible, systemd, model-routing, deepseek, multi-model]
 ---
 
@@ -133,3 +133,95 @@ curl -s http://localhost:4000/v1/chat/completions \
 - **No env injection** — API keys go in the config file directly. Keep `config.yaml` permissions at 600.
 - **Systemd EXEC 203** — If you get exit-code 203/EXEC, you gave systemd a path that doesn't exist. Use `%h/.local/bin/litellm`, not a venv path.
 - **Health check in cron** — The cron health check for OpenCrawl (monitoring multiple services) checks for LiteLLM on port 4000 and flags it as PROXY_DOWN if unreachable.
+
+## Local Inference with Ollama
+
+Ollama wraps llama.cpp to provide a simple model-management lifecycle and an OpenAI-compatible REST API. It complements LiteLLM — you can run a local model via Ollama and proxy it through LiteLLM alongside cloud providers.
+
+### When to Use
+
+- **Ollama** (this section) — easiest CPU setup, model management built-in, good for general chat/code. Best for 3B–14B params on CPU, or 7B–70B on GPU.
+- **llama.cpp** (`llama-cpp` skill) — finer control over GGUF quant selection, direct server process, advanced features (speculative decoding, grammar constraints, LoRA).
+- **vLLM** (`serving-llms-vllm` skill) — GPU-optimized production serving, PagedAttention, best for high-throughput/high-concurrency.
+
+### Quick Install
+
+```bash
+curl -fsSL https://ollama.com/install.sh | bash
+```
+
+This adds the Ollama systemd service, creates the `ollama` user, and starts the service on `127.0.0.1:11434`.
+
+**WARNING:** The install script detects GPU drivers but defaults to CPU-only if none are found. On a CPU-only machine you'll see `WARNING: No NVIDIA/AMD GPU detected.` — this is expected and fine.
+
+### Expose to LAN (for LiteLLM routing)
+
+By default Ollama binds to `127.0.0.1:11434`. To allow LiteLLM on another host to reach it:
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+cat << 'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="OLLAMA_KEEP_ALIVE=5m"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+```
+
+### Pull Models
+
+```bash
+ollama pull llama3.2:3b          # 2 GB, runs on 8GB RAM
+ollama pull mistral:7b-instruct-q4_K_M  # 4.4 GB, needs 16GB
+ollama pull deepseek-r1:7b       # 4.7 GB, needs 16GB
+```
+
+### Route Through LiteLLM
+
+Add to your `litellm` config.yaml:
+
+```yaml
+  - model_name: llama3.2
+    litellm_params:
+      model: ollama/llama3.2:3b
+      api_base: http://192.168.1.137:11434
+```
+
+### Open WebUI (Browser Chat Interface)
+
+```bash
+docker run -d --name open-webui --restart unless-stopped \
+  -p 3000:8080 -v open-webui-data:/app/backend/data \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  --add-host host.docker.internal:host-gateway \
+  ghcr.io/open-webui/open-webui:main
+```
+
+### Safety
+
+**Never expose Ollama on port 11434 to the open internet** — it has no authentication. Use a firewall, VPN, SSH tunnel, or nginx reverse proxy with auth:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 11434 comment "Ollama LAN"
+sudo ufw default deny incoming
+sudo ufw --force enable
+```
+
+### Model Selection Guide (CPU)
+
+| Model | Size | RAM needed | Best for | Tokens/s |
+|-------|------|------------|----------|----------|
+| llama3.2:3b | 2.0 GB | 8 GB | Chat, fast responses | ~20-30 t/s |
+| mistral:7b-instruct-q4_K_M | 4.4 GB | 12 GB | All-rounder | ~8-12 t/s |
+| deepseek-r1:7b | 4.7 GB | 14 GB | Reasoning, STEM | ~6-10 t/s |
+
+For a 16GB host with 3 models loaded: ~11 GB disk for models, ~4-5 GB RAM when serving one at a time.
+
+### Full Reference
+
+See `references/ollama-reference.md` for:
+- Proxmox VM integration (QEMU guest agent, cloud-init VM creation)
+- System monitoring health check script
+- Python `pip` on Ubuntu cloud images
+- SSH host key remediation after VM rebuild

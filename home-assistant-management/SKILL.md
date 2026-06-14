@@ -15,6 +15,98 @@ This skill provides guidance on installing, managing, and troubleshooting Home A
 ## References
 
 - `references/adding-integrations-via-config-flow.md` — full walkthrough: adding the Philips Hue bridge to HA via the config flow REST API, including bridge discovery, flow steps, and link-button handling. The Hue example generalises to any HA integration.
+- `references/home-assistant-chez-hogarth.md` — Home Assistant setup specifics for this user's environment (Tesla, Powerwall, Octopus integration specifics).
+- `references/websocket-api-patterns.md` — HA WebSocket API patterns for real-time subscriptions and device control.
+
+## Scripts
+
+- `scripts/ha_cli.py` — Quick HA query/control CLI from within Hermes sessions. Usage: `HASS_TOKEN=... python3 scripts/ha_cli.py status`
+
+---
+
+## Add-on & HACS Frontend Card Management
+
+For full detail including HA CLI command reference, supervisor troubleshooting, and common add-on slugs, see `references/ha-addon-management.md` (absorbed from the consolidated `ha-addon-management` skill).
+
+### Quick Reference
+
+**Adding repositories:**
+```bash
+ssh root@<ha-ip> "ha store add https://github.com/zigbee2mqtt/hassio-zigbee2mqtt"
+ssh root@<ha-ip> "ha store reload"
+```
+
+**Installing add-ons:**
+```bash
+ssh root@<ha-ip> "ha store apps install <slug>"
+```
+Common slugs: `a0d7b954_vscode` (Code Server), `core_samba` (Samba), `45df7312_zigbee2mqtt` (Zigbee2MQTT), `core_mosquitto` (Mosquitto broker)
+
+**Key pitfalls:** Supervisor must be up-to-date (`ha supervisor update`) before add-on installs. `ha store reload` is required after adding repos. Samba needs password set in config. HACS frontend cards can be deployed via `git clone --depth 1` into `/config/www/community/`.
+
+---
+
+## Custom Component Deployment
+
+For full detail including GitHub download patterns, config flow API multi-step handling, and HA restart procedures, see `references/ha-component-deployment.md` (absorbed from the consolidated `ha-component-deployment` skill).
+
+### Quick Reference
+
+**Install custom_component via SSH:**
+```bash
+ssh root@<ha-ip> "
+  cd /config
+  wget -q -O component.zip 'https://github.com/{owner}/{repo}/archive/refs/tags/v{version}.zip'
+  unzip -q component.zip
+  cp -r {repo}-*/custom_components/{domain} custom_components/
+  rm -rf component.zip {repo}-*/
+  ha core restart
+"
+```
+
+**Config flow via REST API (Python pattern):**
+```python
+# Step 1: Start the flow
+POST /api/config/config_entries/flow
+{"handler": "{domain}"}
+
+# Step 2: Submit form data
+POST /api/config/config_entries/flow/{flow_id}
+# Include all expandable sections even if empty — they're required by the API
+
+# Result: {"type": "create_entry"} on success
+```
+
+**Key pitfalls:** Expandable sections in config flow forms are API-required even when visually collapsed. Config flow IDs are single-use. HA restart can take 30-60s — poll for recovery.
+
+---
+
+## Hermes Agent — Home Assistant API Integration & Gateway
+
+For full detail including token generation, API endpoints, gateway configuration, and HASS_TOKEN recovery after vault migration, see `references/ha-hermes-integration.md` (absorbed from the consolidated `home-assistant-integration` skill).
+
+### Quick Reference
+
+**Environment-based auth (recommended):**
+```bash
+# In ~/.hermes/.env:
+HASS_URL=http://192.168.1.146:8123
+HASS_TOKEN=eyJhbGci...
+```
+
+**Key endpoints:**
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/` | GET | Health check |
+| `/api/config` | GET | HA config (version, location, components) |
+| `/api/states` | GET | All entity states |
+| `/api/services/<domain>/<service>` | POST | Call a service |
+
+**Gateway restart caution:** Restarting the gateway kills the active agent session. Never restart mid-conversation. Defer to off-hours or schedule via cron (`hermes cron create "0 4 * * 0" ...`).
+
+**Key pitfalls:** `unavailable` entities with `restored: true` indicate expired upstream tokens — re-authenticate via HA UI. HA's Tesla integration token and the energy dashboard token are independent — refreshing one does NOT fix the other. Long-Lived Access Tokens only work for REST endpoints, not WebSocket.
+
+---
 
 ## Securing Home Assistant
 1. Check if Home Assistant is running:

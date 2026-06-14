@@ -1,6 +1,6 @@
 ---
 name: hermes-setup-patterns
-description: "Common gotchas, workarounds, and setup patterns for configuring and installing Hermes Agent — gateway service, Telegram/Discord platforms, credential setup, and non-interactive automation of hermes CLI wizards."
+description: "Common gotchas, workarounds, and setup patterns for configuring and installing Hermes Agent — gateway service, Telegram/Discord platforms, credential setup, image generation, usage/cost monitoring, backup and disaster recovery, and non-interactive automation of hermes CLI wizards."
 version: 1.1.0
 author: Agent
 created_by: agent
@@ -12,15 +12,7 @@ Known workarounds and patterns for Hermes setup that go beyond the CLI reference
 
 ## Discord Platform Setup
 
-📘 See the dedicated **`discord-integration`** skill (`social-media/discord-integration`) for full Discord bot setup:
-- Creating a bot application on the Discord Developer Portal
-- Handling React SPA login (native setter pattern for credentials)
-- Token reset with password/2FA verification
-- Inviting the bot to your server
-- Configuring Hermes `config.yaml` for Discord delivery
-- Channel setup: `#general`, `#daily-digest`, `#content-ideas`, `#scripts`
-
-The Discord Developer Portal is a React SPA that the browser snapshot tool struggles with — always use `browser_console` with JS expressions for Discord automation.
+📘 See the dedicated **`discord-bot-management`** skill for full Discord bot setup— bot creation, OAuth REST API operations, gateway integration, pinned index patterns, and React SPA browser automation for the Discord Developer Portal.
 
 ## Gateway Service Installation (`hermes gateway install`)
 
@@ -147,6 +139,44 @@ Then test in a new session — the web toolset should be available (requires `/r
 | Parallel | `parallel` | `PARALLEL_API_KEY` | Search + extract, paid |
 | SearXNG | `searxng` | None (self-hosted URL) | Self-hosted meta-search |
 
+## Web Dashboard External Access (`hermes dashboard`)
+
+The Hermes web admin panel runs on `127.0.0.1:9119` by default. To access it via a reverse tunnel (SSH, localhost.run, etc.):
+
+### Host Header Check
+
+The dashboard has a **Host header validation middleware** that blocks requests whose `Host` header doesn't match the bound interface. This is a security measure (SSRF hardening, CVE-2026-48710 related). To access from outside:
+
+```bash
+# REQUIRED: both flags needed together
+hermes dashboard --host 0.0.0.0 --port 9119 --insecure
+```
+
+- `--host 0.0.0.0` — binds to all interfaces
+- `--insecure` — disables the OAuth auth gate for non-loopback binds
+- `--no-open` — skip opening a browser (useful for headless setups)
+
+**Without `--host 0.0.0.0`**, the dashboard binds to `127.0.0.1` and the host header check only accepts loopback names (`localhost`, `127.0.0.1`, `[::1]`). Even with `--insecure`, the request fails with `400 Invalid Host header` because the bound host is localhost, not 0.0.0.0.
+
+### Tunnel Setup
+
+```bash
+# Start dashboard on all interfaces
+hermes dashboard --host 0.0.0.0 --port 9119 --no-open --insecure &
+
+# Create SSH tunnel
+ssh -R 80:localhost:9119 nokey@localhost.run
+
+# Grab the URL from output (e.g. https://<hash>.lhr.life)
+# Verify:
+curl -s -o /dev/null -w "%{http_code}" https://<hash>.lhr.life
+# Should return 200, not 400
+```
+
+### Security Note
+
+Binding to `0.0.0.0` with `--insecure` exposes the dashboard on your network without OAuth. In production, run it behind a Cloudflare Tunnel or nginx with auth. For temporary tunnel access (session debugging, admin tasks), this is acceptable.
+
 ### Credential Loading
 
 Web search API keys must be in `.env` — they're loaded by the gateway's `load_hermes_dotenv()` at startup. If using the vault, restore them to `.env` after vault migration:
@@ -177,6 +207,14 @@ Gateway restart kills the active agent session. Never do it while the user is mi
    ```bash
    grep -E "(connected|failed)" ~/.hermes/logs/gateway.log | tail -10
    ```
+
+### Graceful Restart on `hermes update`
+
+`hermes update` pulls the latest code, re-installs dependencies, and **restarts the gateway automatically** via the `--replace` flag on the gateway process. This is a **graceful restart** — the old process hands off connections before the new one takes over, causing only a brief interruption (~10-15s) before Telegram/Discord auto-reconnect.
+
+**Safe to run while the gateway is active**, but avoid doing it mid-conversation — the brief window without a response handler can cause a transient error if a message arrives during the swap. Best practice: run between interactions or warn the user first.
+
+**Config migration:** `hermes update --yes` auto-answers interactive prompts including config migration. If API-key entry prompts appear, run `hermes config migrate` separately afterwards.
 
 ## Image Generation Setup
 
@@ -409,6 +447,84 @@ Key points:
 - Set `fallback_providers` as a JSON array in config.yaml for reliability, e.g.: `[{"provider":"custom","model":"gpt-4o-mini","base_url":"http://192.168.1.121:4000/v1"}]`
 - GPT-5.x models use `max_completion_tokens` not `max_tokens`. DeepSeek models use `max_tokens`.
 
+## Usage & Cost Monitoring
+
+### Quick Methods (fastest first)
+
+1. **`/usage` slash command** — in-session overview of tokens and estimated cost
+2. **`sessions.json`** (`~/.hermes/sessions/sessions.json`) — session-level totals (input_tokens, output_tokens, cache_read_tokens, estimated_cost_usd, cost_status)
+3. **`agent.log`** (`~/.hermes/logs/agent.log`) — per-API-call breakdown: `API call #N: model=... provider=... in=... out=... total=... latency=... cache=...`
+4. **Provider billing portals** — authoritative source (DeepSeek: platform.deepseek.com/usage, OpenAI: platform.openai.com/usage, OpenRouter: openrouter.ai/activity)
+
+### Summing Tokens from agent.log
+
+```bash
+# DeepSeek provider total
+grep "API call.*provider=deepseek" ~/.hermes/logs/agent.log | \
+  python3 -c "
+import sys, re
+input_total = output_total = count = 0
+for line in sys.stdin:
+    m = re.search(r'in=(\d+) out=(\d+)', line)
+    if m:
+        input_total += int(m.group(1))
+        output_total += int(m.group(2))
+        count += 1
+print(f'API calls: {count}')
+print(f'Input: {input_total:,} tokens')
+print(f'Output: {output_total:,} tokens')
+print(f'Total: {input_total + output_total:,} tokens')
+"
+```
+
+### Cache Hit Rates
+
+```bash
+grep "API call.*cache=" ~/.hermes/logs/agent.log | \
+  python3 -c "
+import sys, re
+total_cache = total_prompt = 0
+for line in sys.stdin:
+    m = re.search(r'cache=(\d+)/(\d+)', line)
+    if m:
+        total_cache += int(m.group(1))
+        total_prompt += int(m.group(2))
+if total_prompt:
+    print(f'Cache hit rate: {total_cache/total_prompt*100:.1f}%')
+"
+```
+
+### Proactive Cost Monitoring (Cron-Based)
+
+Set up a no-agent watchdog cron that checks provider balances daily and alerts when thresholds are crossed. See the `scripts/deepseek-cost-monitor.py` reference from the archived `provider-usage-tracking` skill for a full implementation.
+
+Register as:
+```json
+{
+  "action": "create",
+  "name": "DeepSeek cost monitor",
+  "script": "deepseek-cost-monitor.sh",
+  "no_agent": true,
+  "schedule": "0 9 * * *"
+}
+```
+
+### Provider Pricing (per million tokens)
+
+| Provider | Model | Input (per 1M) | Output (per 1M) | Cache Hit |
+|----------|-------|----------------|-----------------|-----------|
+| DeepSeek | v4-flash | $0.14 | $0.28 | $0.0028 |
+| DeepSeek | v4-pro | $0.435 | $0.87 | $0.003625 |
+| Anthropic | claude-sonnet-4 | $3.00 | $15.00 | $0.30 |
+| OpenAI | gpt-4o-mini | $0.15 | $0.60 | - |
+| Google | gemini-2.5-flash | $0.15 | $0.60 | - |
+
+### Pitfalls
+- **`sessions.json` may show 0 tokens** — the aggregator may not persist updated totals during active sessions. Cross-reference with agent.log.
+- **First API call per session lacks cache info** in its log line. The grep script handles this with an alternation regex.
+- **`estimated_cost_usd` shows $0.0/unknown** — provider not in cost catalog. Calculate manually from pricing table.
+- **`max_completion_tokens` vs `max_tokens`** — OpenAI o-series and gpt-5.x models use `max_completion_tokens`, not `max_tokens`. Using the wrong parameter returns an error.
+
 ## Image Generation via OpenAI (Response Format Quirk)
 
 OpenAI's `gpt-image-2` model returns images as `b64_json` (base64 PNG data), **not** as a URL. The response has no `url` field:
@@ -463,6 +579,41 @@ HTTPServer(('0.0.0.0', 8081), TaskHandler).serve_forever()
 
 This uses only Python stdlib, runs as a systemd user service, and provides `GET /health` + `POST /task`. See the `opencrawl-worker-delegation` skill (`autonomous-ai-agents/opencrawl-worker-delegation`) for the full implementation with error handling, config, and systemd template.
 
+## Backup & Disaster Recovery
+
+### Overview
+
+Three backup layers protect your Hermes Agent setup:
+
+| Layer | What | When | Retention |
+|-------|------|------|-----------|
+| ☁️ GitHub | All skills (`monty72/hermes-skills`) | On backup run | Forever (git history) |
+| 💾 Local tarball | Full `~/.hermes/` + `~/.hermes-vault/` | Sunday 4am | Last 8 |
+| ⚙️ Proxmox vzdump | VMID 200 (web container) snapshot | Sunday 4am | Last 4 |
+
+### What's Backed Up
+
+**Included in tarball:** `config.yaml`, `.env`, `.env.local`, `skills/` (without .git), `auth.json`, `state.db`, `~/.hermes-vault/`, `~/.local/bin/hermes-vault`, `~/.ssh/proxmox*`
+
+**NOT included:** Hermes source code (reinstallable), `node_modules/`, `lsp/`, `logs/`, `sessions/`, `cache/`
+
+**In GitHub only:** Skill files (SKILL.md + references + scripts + templates). NOT vault, credentials, `.env`, config.yaml.
+
+### Backup Script
+
+Located at `~/.hermes/scripts/hermes-backup.sh`. Runs weekly via cron (Sunday 4am). Pushes skills to GitHub + creates a local tarball. See `references/hermes-disaster-recovery.md` for the full recovery procedure covering: container restore from Proxmox snapshot, full machine loss rebuild, vault restoration from tarball, credential pool recovery, and cron job recreation.
+
+### Critical Files
+
+| File | What it does | Backup source |
+|------|-------------|---------------|
+| `~/.hermes-vault/` | All encrypted API keys | Tarball only |
+| `~/.hermes/.env.local` | Vault passphrase + Brave API key | Tarball only |
+| `~/.hermes/.env` | API keys (placeholders) | Tarball |
+| `~/.hermes/config.yaml` | All settings | Tarball |
+| `~/.hermes/auth.json` | Credential pool state | Tarball |
+| `~/.hermes/state.db` | Session history | Tarball |
+
 ## Resources
 
 - Docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
@@ -471,3 +622,4 @@ This uses only Python stdlib, runs as a systemd user service, and provides `GET 
 - FAL.ai docs: https://fal.ai/docs
 - Model cost management: `references/model-cost-management.md`
 - Remote worker delegation: `autonomous-ai-agents/opencrawl-worker-delegation`
+- Disaster recovery procedure: `references/hermes-disaster-recovery.md`
