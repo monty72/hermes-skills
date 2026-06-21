@@ -298,7 +298,59 @@ For building client-side ROI calculators (form + results, colour-coded outputs, 
 
 11. **Vercel domain SSL is async** — adding a domain returns `verified: true` immediately, but SSL cert generation takes 10-60s. HTTPS errors during that window are normal.
 
-12. **Dynamic routes 404 on Vercel static** — Use `getStaticPaths` returning a fallback page plus `vercel.json` rewrite.
+13. **`.vercel/` is gitignored → CI deploy can't find the project** — Astro's default `.gitignore` includes `.vercel`. When GitHub Actions checks out the repo, there's no `.vercel/project.json`, so `npx vercel deploy --prod` either prompts interactively (fail in CI) or creates a new project with no custom domain.
+
+   **Detecting the wrong project:** After `vercel link`, check `cat .vercel/project.json`. The `projectId` must match the project that owns the custom domain. If it shows a different project (e.g. `dev-site` when you expect `montygroup-astro`), re-link with `npx vercel link --project <correct-name> --yes`.
+
+   **Fix:** Add a gitignore exception and commit the project.json:
+   ```gitignore
+   .vercel
+   !.vercel/project.json
+   ```
+   Then create `.vercel/project.json`:
+   ```json
+   {
+     "projectId": "prj_YOUR_PROJECT_ID",
+     "orgId": "team_YOUR_TEAM_ID"
+   }
+   ```
+   Find IDs via: `npx vercel project ls` then `npx vercel list <project-name>`, or check a working local `.vercel/project.json`. Alternatively pass `--scope` and let Vercel detect from the git remote.
+
+   **Alternative (no committed file):** Pass env vars in deploy.yml:
+   ```yaml
+   - name: Deploy to Vercel
+     env:
+       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+     run: npx vercel deploy --prod --token '${{ secrets.VERCEL_TOKEN }}' --yes
+   ```
+
+   **Diagnostic:** CI deploy shows "Retrieving project…" then creates a new project instead of using the existing one.
+
+15. **Dynamic routes 404 on Vercel static** — Use `getStaticPaths` returning a fallback page plus `vercel.json` rewrite.
+
+16. **Node version range causes Vercel to auto-upgrade to latest LTS** — The `package.json` `engines` field uses `">=22.12.0"` syntax, which Vercel interprets as "use the latest LTS" — currently Node 24.x. This can break Astro builds if the project isn't tested on 24.x. The build log shows a warning: `"engines": { "node": ">=22.12.0" } ... Node.js Version \"24.x\" will be used instead`.
+
+   **Fix:** Pin to the exact major:
+   ```json
+   "engines": { "node": "22.x" }
+   ```
+   This tells Vercel to stay on 22.x. After changing, run `npx vercel build --prod` and verify no warning appears. Then `npx vercel deploy --prebuilt --prod --yes` to redeploy.
+
+17. **Vercel build queue stuck — all new deploys show UNKNOWN status** — When every deployment shows `UNKNOWN` in `npx vercel list` and never transitions to `● Ready` or `● Error`, the project's build queue may be hung. Normal deploy commands (`vercel deploy --prod`, `vercel deploy --prebuilt --prod`) upload files but Vercel's infrastructure never finishes processing.
+
+   **Diagnosis:** `npx vercel list <project> --token $TOKEN` shows multiple UNKNOWN entries with no Ready state after 5+ minutes. The CLI shows "Building…" then times out.
+
+   **Workaround — deploy dist/ as a new project:**
+   ```bash
+   # Deploy the pre-built dist/ folder directly — creates a new Vercel project
+   cd ~/dev-site && npx vercel deploy dist/ --prod --yes --token $TOKEN
+   ```
+   This creates a separate project (e.g. `dist-xxxxx`) that works instantly. The trade-off: custom domains won't auto-link because the domain lives on the original project. Use this for getting the site live quickly while investigating the stuck build queue in the Vercel dashboard.
+
+   **Root fix:** Open the Vercel dashboard → project → deployments → cancel all UNKNOWN/queued deployments. The next push should then process normally. Check the Vercel status page for platform issues if cancelling doesn't help.
+
+   **Prevention:** Commit `.vercel/project.json` to the repo (with a gitignore exception) so CI always links to the correct project — this prevents project-creation confusion that can trigger build queue issues.
 
 14. **Missing `currentPath` on a page** — Layout nav highlighting requires the prop. Missing it defaults to `/`. Use `grep -L 'currentPath' src/pages/**/*.astro` to find missing ones.
 

@@ -54,6 +54,59 @@ When creating an API token in the Cloudflare dashboard, pick the relevant scopes
 | `cfut_` | Cloudflare User Token (API token) | ✅ Per scopes configured |
 | `eyJ...` (JWT) | Tunnel secret / origin cert | ❌ cloudflared only |
 
+### Python subprocess pattern for vault token usage (avoids bash subshell mangling)
+
+When writing scripts that retrieve tokens from `hermes-vault`, the `$()` bash subshell approach can produce mangled output when embedded in files via `write_file` — the masking system may corrupt `$(...)` patterns.
+
+**✅ Preferred pattern — Python `subprocess.run()`:**
+
+```python
+import subprocess, json
+
+def cf_get(path, token):
+    cmd = ['curl', '-s', 'https://api.cloudflare.com/client/v4' + path]
+    cmd.append('-H')
+    cmd.append('Authorization: Bearer *** + token)
+    cmd.append('-H')
+    cmd.append('Content-Type: application/json')
+    return subprocess.run(cmd, capture_output=True, text=True).stdout
+
+token = subprocess.run(['hermes-vault', 'get', 'CLOUDFLARE_API_TOKEN'],
+                       capture_output=True, text=True).stdout.strip()
+```
+
+**❌ Avoid — bash subshell in write_file content:**
+
+```bash
+# Writing this via write_file may mangle the $() subshell
+TOKEN=*** get TOKEN)
+curl ... -H "Authorization: Bearer ***
+```
+
+The Python approach keeps the token string concatenation clean and avoids shell interpolation issues entirely.
+
+## Cloudflare Pages Token Scope
+
+A standard DNS/Tunnel-scoped API token (`Zone > DNS > Edit`) CANNOT deploy to Cloudflare Pages. The API returns `Authentication error [code: 10000]` when calling `/pages/projects` or `/accounts/*/pages/*` endpoints.
+
+**To deploy to Cloudflare Pages, the token must include `Cloudflare Pages > Edit` scope.**
+
+To verify a token has Pages access vs DNS-only access:
+```
+# DNS works (with any DNS-scoped token)
+curl -s "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+  -H "Authorization: Bearer $TOKEN"
+# Returns success with records
+
+# Pages requires a SEPARATE scope
+curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCT/pages/projects" \
+  -H "Authorization: Bearer $TOKEN"
+# DNS-only token: "Authentication error [code: 10000]"
+# Pages-scoped token: "success": true
+```
+
+**Workaround if you only have a DNS-scoped token:** Use Vercel (deploy `dist/` directly as a new project), Surge.sh, or serve from a Proxmox LXC behind the Cloudflare Tunnel. The DNS token can still update records to point at these alternatives.
+
 If the user says "don't you already have a token" — check for `cfut_` prefixed values in vault/env BEFORE checking tunnel secrets. Tunnel secrets (`eyJ...`) are NOT API tokens.
 
 ### Token Scope Discovery Procedure
@@ -91,7 +144,18 @@ Success = DNS write works. Clean up the test record with DELETE.
 curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/email/routing" \
   -H "Authorization: Bearer $TOKEN"
 # Error 10000 = token lacks Email Routing scope. DNS:Edit token cannot enable Email Routing.
+- **Error 10000** — token lacks Email Routing scope. DNS:Edit token cannot enable Email Routing.
+
+**Step 4.5: Try Cloudflare Pages** (if you plan to deploy static sites)
+
+```bash
+ACCOUNT_ID="<account-id>"
+curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/pages/projects" \
+  -H "Authorization: Bearer *** DNS-only token: "Authentication error [code: 10000]"
+# Pages-scoped token: returns project list (possibly empty)
 ```
+
+Pages requires `Cloudflare Pages > Edit` scope added in the Cloudflare dashboard. A DNS-only token cannot deploy to Pages. If Pages access is missing, deploy via Vercel (`npx vercel deploy dist/ --prod --yes`), Surge.sh, or self-hosted behind Tunnel.
 
 **Step 5: Try creating a tunnel** (only if you need one)
 ```bash

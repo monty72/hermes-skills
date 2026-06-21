@@ -22,11 +22,12 @@ Deploy static HTML/CSS/JS sites to public URLs. Covers multiple strategies order
 | **localhost.run** | None | ✗ (changes per session) | ✗ | Dev previews, demos |
 | **GitHub Pages** | GitHub token | ✓ (org/user pages) | ✓ | Simple static hosting |
 | **Python http.server** | None | ✗ (local only) | ✗ | Dev testing |
+| **Cloudflare Pages** | Cloudflare API token with `Cloudflare Pages > Edit` scope | ✓ | ✓ | Static sites via `wrangler pages deploy dist/`, GitHub Actions `cloudflare/wrangler-action`, or Direct Upload API <br/>⚠️ Standard DNS/Tunnel tokens return "Authentication error" — must add Pages scope in dashboard |
 
 ### When to use each
 
 - **Framework-based sites** (Astro, Next.js, SvelteKit, etc.) → **Vercel + GitHub Actions**. The build tool handles the framework; Vercel auto-deploys every push, handles SSL/custom domains, and builds in <30s.
-- **Raw HTML/CSS/JS** (one-off pages, resource hubs) → **Vercel** (create repo, `npx vercel deploy --prod --token $TOKEN --yes`) or **Cloudflare Tunnel** if you own a domain.
+- **Raw HTML/CSS/JS** (one-off pages, resource hubs) → **Vercel** (create repo, `npx vercel deploy --prod --token $TOKEN --yes`) or **Cloudflare Tunnel** if you own a domain, or **Cloudflare Pages** if you have a Pages-scoped API token.
 - **Internal tools** → **Proxmox LXC** + Cloudflare Tunnel for private access.
 - **Quick file transfer** → **localhost.run** (no account needed).
 
@@ -169,7 +170,7 @@ Full-stack CI/CD: Astro framework → GitHub Actions → Vercel deploy. This is 
 ### Prerequisites
 
 - GitHub repo with code pushed
-- Vercel access token (generate at https://vercel.com/account/tokens — "Full" scope)
+- Vercel access token (generate at https://vercel.com/account/tokens -- "Full" scope)
 - Public GitHub repo (or GitHub Vercel App installed for private repos)
 
 ### One-shot deploy (no GitHub integration needed)
@@ -234,7 +235,7 @@ jobs:
 
 Then add `VERCEL_TOKEN` as a GitHub Actions secret on the repo.
 
-### Git push with PAT (no gh CLI) — Method A: embedded token
+### Git push with PAT (no gh CLI) -- Method A: embedded token
 
 When `gh` is unavailable, create the repo and push via API + git:
 
@@ -263,7 +264,7 @@ git remote add origin https://$GH_USER:$GITHUB_TOKEN@github.com/$GH_USER/my-repo
 git push -u origin main
 ```
 
-### Git push with PAT (no gh CLI) — Method B: vault credential helper (preferred)
+### Git push with PAT (no gh CLI) -- Method B: vault credential helper (preferred)
 
 If the hermes-vault git credential helper is configured (`git config --global credential.helper` returns `!~/.local/bin/git-credential-vault`), you can use a clean HTTPS URL with no token embedded. The helper authenticates automatically:
 
@@ -286,7 +287,7 @@ git config user.name "Your Name"
 git init && git branch -m main
 git add -A && git commit -m "Initial commit"
 
-# 4. Add clean remote (no token — credential helper supplies it)
+# 4. Add clean remote (no token -- credential helper supplies it)
 git remote add origin https://github.com/YOUR_USERNAME/my-repo.git
 git push -u origin main
 ```
@@ -300,7 +301,7 @@ When migrating from Cloudflare Tunnel to Vercel, update DNS:
 1. In Cloudflare, change CNAME records from `<tunnel-id>.cfargotunnel.com` to `cname.vercel-dns.com`
 2. Subdomains: `proxied: false` (DNS-only), apex: `proxied: true` (CNAME flattening via Cloudflare proxy)
 3. Vercel auto-generates SSL certs for all connected domains
-4. The API backend can stay on a separate tunnel subdomain: `api.example.com → <tunnel-id>.cfargotunnel.com`
+4. The API backend can stay on a separate tunnel subdomain: `api.example.com -> tunnel-id.cfargotunnel.com`
 
 ```bash
 # Update subdomains in bulk
@@ -319,49 +320,166 @@ done
 - After adding a domain on Vercel, it says "verified" immediately, but SSL cert generation is async (takes 10-60s)
 - `vercel deploy` uploads the entire cwd unless `.vercelignore` is set. Node_modules is auto-ignored by Vercel
 - The Vercel CLI resolves `--token` as requiring an arg: `vercel --token` without a value prints help instead of an error. Always pass `--token $TOKEN` where `$TOKEN` is set
-6. **`npm create astro@latest` generates a random placeholder name** (e.g. "fumbling-field") in package.json — rename to match the project immediately
-7. **`require()` fails in Astro's ESM context** — `.astro` frontmatter runs in ESM. Never use `require('os')`, `require('fs')` etc. Use `import os from 'node:os'` instead for server-side system metrics in frontmatter.
-8. **Template literals in JSX expression blocks** — esbuild can choke on backtick template literals inside `{ }` expression blocks in `.astro` files. The error looks like `Unexpected "const"` at column 776 (a transpiled single-line column). Fix: use string concatenation (`'foo' + bar`) instead of backticks inside JSX blocks (`\`foo ${bar}\``).
-- `cloudflared tunnel run --config path` vs `cloudflared tunnel --config path run` — the options must come BEFORE the subcommand. `cloudflared tunnel run` interprets `--config path` as an unknown flag and prints help instead of running. Correct: `cloudflared tunnel --config path run`.
-- **Vite allowedHosts** — Tunnels (localhost.run, etc.) use random hostnames that Vite blocks by default. Set `allowedHosts: true` in vite.config.ts when behind a tunnel.
-- **nginx auth_basic inheritance** — If the server block has `auth_basic`, ALL location blocks inherit it unless they explicitly set `auth_basic off;`. Always add `auth_basic off;` to proxy locations for APIs.
-- **Python serverless + SQLite** — Vercel/Netlify serverless runtimes have ephemeral read-only filesystems. Flask APIs using SQLite must run on a VPS or Proxmox LXC, not as a serverless function.
+- Vercel token expiry -- tokens expire silently. CI shows success but site stays on old version. Generate fresh token at https://vercel.com/account/tokens.
+- Multiple tunnel configs -- stale `localhost.run` or `cloudflared` processes conflict. Kill with `pkill -f "localhost.run" && pkill -f "cloudflared tunnel"`
+- **`npm create astro@latest` generates a random placeholder name** (e.g. "fumbling-field") in package.json -- rename to match the project immediately
+- **`require()` fails in Astro's ESM context** -- `.astro` frontmatter runs in ESM. Never use `require('os')`, `require('fs')` etc. Use `import os from 'node:os'` instead for server-side system metrics in frontmatter.
+- **Template literals in JSX expression blocks** -- esbuild can choke on backtick template literals inside `{ }` expression blocks in `.astro` files. The error looks like `Unexpected "const"` at column 776 (a transpiled single-line column). Fix: use string concatenation (`'foo' + bar`) instead of backticks inside JSX blocks (`\`foo ${bar}\``).
+- `cloudflared tunnel run --config path` vs `cloudflared tunnel --config path run` -- the options must come BEFORE the subcommand. `cloudflared tunnel run` interprets `--config path` as an unknown flag and prints help instead of running. Correct: `cloudflared tunnel --config path run`.
+- **Vite allowedHosts** -- Tunnels (localhost.run, etc.) use random hostnames that Vite blocks by default. Set `allowedHosts: true` in vite.config.ts when behind a tunnel.
+- **nginx auth_basic inheritance** -- If the server block has `auth_basic`, ALL location blocks inherit it unless they explicitly set `auth_basic off;`. Always add `auth_basic off;` to proxy locations for APIs.
+- **Python serverless + SQLite** -- Vercel/Netlify serverless runtimes have ephemeral read-only filesystems. Flask APIs using SQLite must run on a VPS or Proxmox LXC, not as a serverless function.
 
-Deploy to a Proxmox LXC container on your own hardware. The LAN IP is permanent. See **`proxmox-host-creation`** skill for full provisioning details.
+## Method 7: Cloudflare Pages
 
-### Quick Redeploy (container already set up)
+Cloudflare Pages is a static site hosting platform with generous free tier, global CDN, and direct integration with Cloudflare DNS. Deploy via either GitHub Actions (recommended) or Direct Upload API.
 
-```bash
-# From Hermes VM, copy files to container (if SSH works)
-scp -o StrictHostKeyChecking=no -r ./dist/* root@<container-ip>:/var/www/<sitename>/
+### Prerequisites
 
-# OR via Proxmox shell (pct push)
-curl -s http://192.168.1.6:8000/index.html > /tmp/site.html \
-  && pct push 200 /tmp/site.html /var/www/<sitename>/index.html \
-  && rm /tmp/site.html
+- **Cloudflare API token** with `Cloudflare Pages > Edit` scope — create at dashboard.cloudflare.com/profile/api-tokens
+- **Account ID** — found in Cloudflare dashboard sidebar under "Account"
+
+### ⚠️ Known Wrangler Bug: `cfut_` Token Prefix
+
+The `cfut_`-prefix token format causes wrangler CLI to fail with `"Invalid format for Authorization header [code: 6111]"` (GitHub Issue #5175). The token works fine via the REST API directly (curl/Python) and via GitHub Actions.
+
+**Workarounds (pick one):**
+1. **GitHub Actions** (recommended) — `cloudflare/wrangler-action@v3` handles auth correctly
+2. **Direct Upload API** — use Python/curl to call the Pages API directly
+3. **Standard API token** — if you can create a non-`cfut_` token with Pages scope
+
+### Path A: GitHub Actions Auto-Deploy (Recommended)
+
+Create `.github/workflows/deploy-cloudflare.yml`:
+
+```yaml
+name: Deploy to Cloudflare Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22         # Astro 5 requires >=22.12.0; do NOT use 20
+      - name: Install & build
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist/ --project-name=montygroup-astro --branch=main
 ```
 
-### Making it Internet-Accessible
-
-See **`cloudflare-dns-management`** skill for:
-- Creating DNS A records pointing to the container IP
-- Cloudflare proxied (orange cloud) for SSL/DDoS protection
-- Setting up Cloudflare Tunnel for port-free ingress
-- Permanent HTTPS via Cloudflare edge
-
-For Mission Control-style dashboards:
-
+Add secrets to the GitHub repo:
 ```bash
-mkdir -p ./dist
-# Write index.html to ./dist/
-# Deploy:
-npx surge ./dist mission-control.surge.sh
-# OR for temp preview:
-cd ./dist && python3 -m http.server 8080 &
-ssh -R 80:localhost:8080 nokey@localhost.run
+gh secret set CLOUDFLARE_API_TOKEN --repo owner/repo < token.txt
+gh secret set CLOUDFLARE_ACCOUNT_ID --repo owner/repo < acct-id.txt
 ```
 
-## MC v4 Design Porting
+Then push to `main` (or `workflow_dispatch` via `gh workflow run`) — the action handles building + deploying.
+
+### Path B: Direct Upload API (when wrangler CLI auth fails)
+
+For environments where wrangler can't authenticate (cfut_ token bug, non-interactive CI), use the Pages Direct Upload API directly.
+
+**Step 1: Create project** (one-time)
+```python
+import http.client, json
+# POST /client/v4/accounts/{ACCT}/pages/projects
+# Body: {"name": "project-name", "production_branch": "main"}
+```
+
+**Step 2: Build file manifest**
+```python
+for each file, compute: {"content_type": mime, "sha256": sha256(file)}
+manifest = {rel_path: {content_type, sha256} for all files}
+```
+
+**Step 3: Create deployment with multipart form-data**
+```python
+# The manifest is sent as a multipart FORM FIELD, NOT JSON body
+boundary = b'----FormBoundary7MA4YWxkTrZu0gW'
+parts = []
+parts.append(b'--' + boundary + b'\r\n')
+parts.append(b'Content-Disposition: form-data; name="manifest"\r\n')
+parts.append(b'Content-Type: application/json\r\n\r\n')
+parts.append(json.dumps(manifest).encode() + b'\r\n')
+parts.append(b'--' + boundary + b'\r\n')
+parts.append(b'Content-Disposition: form-data; name="branch"\r\n\r\n')
+parts.append(b'main\r\n')
+parts.append(b'--' + boundary + b'--\r\n')
+
+conn.request('POST', f'/client/v4/accounts/{ACCT}/pages/projects/{PROJ}/deployments',
+    body=body_bytes,
+    headers={'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'multipart/form-data; boundary=...'})
+```
+
+**Step 4: Upload missing files** (if API reports `missing_hashes`)
+```python
+# Get JWT from deployment response
+# POST /client/v4/pages/assets/upload with JWT auth
+# Multipart: key (rel_path), value (file binary), metadata (JSON)
+```
+
+**Step 5: Build starts automatically** — deployment URL: `https://{deploy_id}.{project}.pages.dev`
+
+See `references/cloudflare-pages-direct-upload.md` for the complete Python deployment script and endpoint reference.
+
+### Path C: Project Created as Wrong Type (Direct Upload vs GitHub)
+
+If you accidentally create a Direct Uploads project and need GitHub-connected builds, you **cannot** change the `source` type on an existing project (error code 8000069). Delete and recreate:
+
+```python
+DELETE /client/v4/accounts/{ACCT}/pages/projects/{PROJ}
+# Then recreate with source: {type: "github", config: {owner, repo, production_branch}}
+```
+
+### Custom Domain Setup
+
+After the Pages project is deployed on `*.pages.dev`, add a custom domain via API:
+
+```python
+# POST /client/v4/accounts/{acct}/pages/projects/{proj}/domains
+# IMPORTANT: use 'name' key, NOT 'domain'
+body = json.dumps({'name': 'example.com'}).encode()
+
+conn = http.client.HTTPSConnection('api.cloudflare.com')
+conn.request('POST',
+    f'/client/v4/accounts/{ACCT}/pages/projects/{PROJ}/domains',
+    body=body,
+    headers={
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json',
+    })
+```
+
+**API quirk:** The body uses `{"name": "example.com"}` — using `{"domain": "..."}` returns error `8000015: "The domain you have entered contains an invalid TLD"`.
+
+Then update DNS: replace apex A records with a proxied CNAME (`example.com -> project-name.pages.dev`). Cloudflare handles CNAME flattening at the apex, and SSL is issued automatically.
+
+### Pitfalls
+
+1. **cfut_ token + wrangler = broken** — see the bug note above. Always test auth with `curl -sI -H "Authorization: Bearer $TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify | grep 200`
+2. **Node version for Astro 5** — requires `>=22.12.0`. Pinning to 20 in GA causes build failure. Use `node-version: 22`.
+3. **Direct upload projects can't switch to GitHub source** — must delete and recreate
+4. **Deployment shows "deploy: success" but URL returns 404** — the queued/initalize/build stages may still be idle for Direct Upload deployments. Wait 30-60s or check the deployment stages via GET `/deployments/{id}`. If the "queued" stage stays "active" while "deploy" shows "success", the deployment may be stuck — create a new one.
+5. **Direct Upload API expects multipart, not JSON** — sending `{"manifest": ...}` as JSON body fails with `"manifest field was expected but not provided"` (code 8000096). Always use multipart/form-data with a `manifest` form field containing the JSON string.
+6. **Domain API body uses `name` not `domain`** — sending `{"domain": "example.com"}` returns confusing error `8000015: "The domain you have entered contains an invalid TLD"`. Use `{"name": "..."}` instead.
+7. **GitHub Actions `cloudflare/wrangler-action@v3` handles `cfut_` tokens fine** — the auth bug is wrangler-CLI-specific. The GitHub Action passes the token via secret, not env var, and works correctly.
+
+## Deploy to a Proxmox LXC container
 
 When porting the MC v4 (Lonely Octopus) design system from the Next.js dashboard to a separate site (e.g. Astro production site at ~/dev-site/), follow this pattern.
 
@@ -424,6 +542,12 @@ Define reusable utilities in CSS. ⚠️ **DO NOT use `@apply` with custom class
 
 **NEVER apply MC v4 dashboard styling to a content/brochure page.** If in doubt, go clean white.
 
+### ⚠️ User Preference: Employer Discretion on Public Site
+
+**This user does NOT want their specific employer name published on the public site.** If a page or bio references their job, use a generic description (e.g. *"large UK logistics company"*) instead of the actual company name. This applies to all pages on `montygroup.uk` — about page, tools hub, blog posts, testimonials, and footers. The specific employer name (formerly Royal Mail) is fine in private/internal contexts (this chat, memory, Hermes config) but never on the public-facing site.
+
+If you discover a stale reference to the specific employer name during site maintenance, fix it immediately — don't leave it for later.
+
 ### Color Mapping (dark theme → MC v4 light → clean white)
 
 **Stage 1: Gradient dark → MC v4 light (for dashboards/apps)**
@@ -480,8 +604,10 @@ See also: `cloudflare-dns-management` (DNS records, tunnels, HTTPS), `proxmox-ho
 | `references/astro-vercel-cicd-pattern.md` | Full Astro 5 scaffold with GitHub Actions CI/CD and Vercel deployment |
 | `references/vercel-tunnel-migration.md` | Migrating from Cloudflare Tunnel to Vercel (DNS swap, API subdomain, tunnel ingress update) |
 | `references/nginx-basic-auth.md` | Nginx HTTP Basic Auth setup — htpasswd, config snippets, testing, Cloudflare compatibility |
-| `references/react-vite-gh-vercel.md` | Full Vite+React → GitHub API → Vercel deploy workflow (no gh CLI, uses vault credential helper) |
+| `references/react-vite-gh-vercel.md` | Full Vite+React to GitHub API to Vercel deploy workflow (no gh CLI, vault credential helper) |
+| `references/python-proxy-server.md` | Python proxy server that serves static files and proxies API requests through one port |
 | `references/proxmox-lxc-api-deployment.md` | Deploy Flask API + SQLite on Proxmox LXC with systemd + nginx proxy |
+| `references/cloudflare-pages-direct-upload.md` | Complete Python deployment script and API reference for Cloudflare Pages Direct Upload |
 
 ## Securing with Basic Auth
 

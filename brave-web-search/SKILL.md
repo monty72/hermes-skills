@@ -2,7 +2,7 @@
 name: brave-web-search
 title: Brave Web Search
 description: Search the web via the Brave Search API. No browser needed, no bot detection. Use for content research, fact-checking, and finding current information.
-related_skills: [content-site-builder]
+related_skills: [content-site-builder, market-research]
 ---
 
 Use this skill when you need to find current information, verify facts, research topics, or discover content that's beyond your training data cutoff.
@@ -64,6 +64,7 @@ echo \"=== TOPIC 1 ===\" && curl ... && echo \"=== TOPIC 2 ===\" && curl ...
 
 ## Pitfalls
 - URL-encode query parameters (`curl --data-urlencode` or Python's `urllib.parse.quote`)
+- **`curl | python3` may be blocked by Hermes security layer (tirith).** If the pipe-to-interpreter pattern is denied, fall back to the `web_search` tool or use `execute_code` with `from hermes_tools import web_search` to perform the search via Python, then process results with stdlib.
 - Use gzip decompression (the API returns gzipped responses)
 - Rate limit: 50 requests/second — don't need to throttle for normal use
 - Free credits: $5/mo = 1,000 searches/month (~33/day)
@@ -73,6 +74,7 @@ echo \"=== TOPIC 1 ===\" && curl ... && echo \"=== TOPIC 2 ===\" && curl ...
 
 ## Fallback
 If Brave Search fails or returns no results, try:
-1. Wikipedia via `curl -sL "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=<QUERY>&format=json"`
-2. Direct HTTP to known documentation sites
-3. The Hermes browser tool (last resort — has bot detection issues, expensive)
+1. **Hermes `web_search` tool** — fastest fallback, no pipe-to-interpreter issues, same search quality. Use via direct tool call or `from hermes_tools import web_search` in execute_code.
+2. Wikipedia via `curl -sL "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=<QUERY>&format=json"`
+3. Direct HTTP to known documentation sites
+4. The Hermes browser tool (last resort — has bot detection issues, expensive)

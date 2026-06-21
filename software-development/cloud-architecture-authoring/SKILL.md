@@ -723,7 +723,75 @@ When the user asks for a FinOps RACI (or any operating model RACI), cover these 
 
 Delivery: Single markdown table file with all 8 role columns, at least 60+ rows covering the full FinOps lifecycle. Include a role definitions table at the top.
 
-### 15. Checklists
+### 15. The Paired Artefact Pattern — Build + Govern
+
+A recurring delivery pattern this skill's sessions have validated: **every service or technology pattern should produce two companion artefacts**, not one. They serve different audiences and different moments in the workload lifecycle, but they reference each other.
+
+#### The Pattern
+
+```
+USER: "Write me an Azure Front Door pattern"
+
+DELIVERABLES:
+├── patterns/AFD-001-azure-front-door.md   ← BUILD PATTERN (how to build it)
+└── policy-cicd/CAF-POL-001-waf-policy-    ← GOVERNANCE ARTEFACT (how to
+    blueprint.md                               enforce it)
+```
+
+| Artefact | Purpose | Audience | Key Sections |
+|----------|---------|----------|-------------|
+| **Build Pattern** (`patterns/`) | Prescriptive — "here's how you configure it optimally" | Solution architects, SRE, dev teams doing the build | Architecture, routing, WAF config, caching, Private Link, health probes, multi-region failover, cost estimate, operational runbook |
+| **Governance Artefact** (`policy-cicd/`, `guardrails/`, or `standards/`) | Restrictive — "here's what we enforce" | Platform engineers, compliance, security | CAF/WAF-aligned policy initiatives, policy-as-code definitions, assignment map, CI/CD pipeline, exemption process, compliance reporting, rollback procedure |
+
+#### Why Two Documents
+
+- **Different audiences:** The architect building the service reads the pattern. The platform engineer enforcing guardrails reads the policy artefact. Neither should have to filter the other document for what they need.
+- **Different cadence:** Patterns update when service versions change. Policy artefacts update when governance requirements evolve. Separate files mean separate PRs, separate review pipelines.
+- **Different WAF assessment lens:** The build pattern's WAF assessment checks "did we configure this service right?" The governance artefact's WAF assessment checks "did we write policies that prevent misconfiguration?" They're complementary, not redundant.
+- **Different repo locations:** Patterns live under `patterns/`; governance lives under `policy-cicd/` or `guardrails/`. The repo structure already separates them — the authoring workflow should too.
+
+#### Trigger Phrases
+
+Any of these signal the paired-arte fact pattern is appropriate:
+
+- "Write me a {service} pattern"
+- "Reference architecture for {technology}"
+- "How should we use {service} in our estate"
+- "Can you write up the approach for {service}"
+- "Design a {service} deployment"
+
+#### Required companion for each artefact
+
+| Requirement | Build Pattern | Governance Artefact |
+|-------------|---------------|---------------------|
+| **WAF self-assessment** | ✅ Embedded (section 6-pillar score) | ✅ Embedded (section 6-pillar score, different lens) |
+| **Architecture diagram** | ✅ Official Azure icons (`diagrams` Python lib) | Optional (call out reference to pattern's diagram) |
+| **Cost estimate** | ✅ Service-level pricing table | ✅ Policy operational cost + savings projections |
+| **Operational runbook** | ✅ Service-specific failure scenarios | ✅ Rollback procedure, exemption lifecycle |
+| **Cross-reference sibling** | ✅ Link to governance artefact | ✅ Link to build pattern |
+
+#### WAF Self-Assessment Mandate (updated)
+
+Every standard, pattern, blueprint, or policy artefact produced by this skill MUST include a companion WAF self-assessment. **Embedded is preferred** (within the document as a dedicated section) over a sibling review artefact file — keeping the assessment co-located with the document it evaluates means fewer files to maintain and one less cross-reference to break. Use the sibling file pattern (`reviews/waf-alignment-{topic}.md`) only when the document already exceeds 30KB and the WAF assessment would push it past readable length.
+
+Score each of the 6 pillars (Reliability, Security, Cost, Ops, Performance, Sustainability), flag remaining gaps with concrete fixes, and include the overall percentage. The self-assessment is the authorised response when the user asks "does this align with best practice?" — building it BEFORE the question is asked prevents the deliverable from being judged incomplete after delivery. Target: ≥90% across all pillars before presenting. Sustainability is consistently the weakest pillar across all artefact types — call it out explicitly every time.
+
+#### Companion Architecture Diagrams (updated)
+
+Every operational standard, major pattern, or governance artefact should include a companion architecture diagram. Two approaches:
+
+| Approach | When to Use | Output | Dependencies |
+|----------|-------------|--------|-------------|
+| **HTML/SVG** (via `architecture-diagram` skill) | Custom tech stacks, dark theme, any component type, no dependencies | Single `.html` file, open in browser | None — fully self-contained |
+| **Python `diagrams` library** (via `azure-architecture-diagrams` skill) | Official Azure stencil icons, enterprise presentations, WAF reviews, exec decks | `.png` with genuine Microsoft iconography | `pip install diagrams` + `apt-get install graphviz` |
+
+**Recommendation:** Prefer the Python `diagrams` library for any artefact that goes to an exec, review board, or external audience — official Azure icons carry weight. Prefer the HTML/SVG approach for internal reference diagrams that need zero setup to view. When time is short, HTML/SVG is faster (no install step).
+
+See also the `azure-architecture-diagrams` skill for the full setup and import reference.
+
+**Import quick-reference:** `references/diagrams-library-quirks.md` documents all known `diagrams` library import mismatches (v0.25.1) — consult this first to skip the 3-5 import-error cycle that occurs when names don't match expectations.
+
+### 16. Checklists
 
 Write as checkbox lists with decision gates:
 
@@ -953,6 +1021,8 @@ When `git reset --hard origin/main` was accidentally used and destroyed staged c
 - `references/cloud-architecture-session-2.md` — Output reference for the second major session: Apptio FinOps operating model (11 integrations, auto-response workflows, budget management, unit economics), enterprise tagging standard (9 mandatory + 30 optional tags, Azure Policy + GCP Org Policy, tag lifecycle), FinOps RACI matrix (8 roles × 50+ activities across 8 domains), architecture diagram (5-layer SVG), monetisation strategy (5 angles with feasibility matrix), subagent assessment, and the cron-based weekly content generation setup. Use as a pattern reference for FinOps operating model and strategic advisory documents.
 - `references/backup-dr-session.md` — Output reference for the multi-cloud backup & DR standard (CLOUD-BCDR-001). Covers 20+ services across 3 clouds, RTO/RPO tiers, testing cadence, cost benchmarks, compliance mapping. Demonstrates the operational standard document pattern.
 - `references/jetstream-waf-session.md` — Output reference for the JetStream on AVS vs native Azure/GCP messaging pattern (MSG-001) and its WAF alignment assessment. Covers self-managed vs managed service comparison pattern, companion reference architecture diagrams, WAF assessment structure, and sustainability as the consistently weakest pillar. Also includes the migration path pattern (dual-write → cutover → decommission).
+- `references/vwan-session.md` — Output reference for the Azure Virtual WAN hub pattern (VWAN-001) and its CAF/WAF governance policy blueprint (CAF-POL-002). Covers the paired artefact pattern applied to networking infrastructure, diagram regeneration workflow after region changes, the `diagrams` Python library import quirks (v0.25.1), and Private Endpoint DNS resolution as the #1 gotcha in vWAN.
+- `references/diagrams-library-quirks.md` — Quick-reference table of all `diagrams` (v0.25.1) import names that differ from expected Azure service names. Covers 20+ imports, nonexistent modules, Edge() kwarg gotchas, and diagram verification tips.
 
 ## Scripts
 

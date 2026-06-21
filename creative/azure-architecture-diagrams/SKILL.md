@@ -58,16 +58,53 @@ for importer, modname, ispkg in pkgutil.iter_modules(diagrams.azure.__path__):
 
 Some modules have both old and new names (e.g. `diagrams.azure.network` and `diagrams.azure.networking`). The old-namespace (`network`) is usually more complete for Azure. Common imports:
 
+### 🔑 Key Pattern: All Azure Service Classes Use PLURAL Names
+
+The `diagrams` library follows a strict naming rule for Azure icons: **every Azure service class name is plural** (unlike the Azure portal which uses singular names). This is a systematic pattern, not per-class:
+
+| Azure portal name | `diagrams` class name | Why |
+|---|---|---|
+| Virtual WAN | `VirtualWans` | Plural |
+| Front Door | `FrontDoors` | Plural |
+| App Service | `AppServices` | Plural |
+| Key Vault | `KeyVaults` | Plural |
+| SQL Database | `SQLDatabases` | Plural |
+| Function App | `FunctionApps` | Plural |
+| Private Endpoint | `PrivateEndpoint` | No word to pluralize |
+
+Azure services → **pluralize the last word**. "Virtual WAN" → `VirtualWans`, not `VirtualWan`. "App Service" → `AppServices`, not `AppService`. "ExpressRoute Circuit" → `ExpressrouteCircuits`.
+
+The only exceptions are single-word names (no word to pluralize): `Firewall`, `Monitor`, `AKS`, `CosmosDb`, `Blank`, `PrivateEndpoint`. These have no trailing `s`. When you see an import error for a class name that matches the Azure portal's singular form, try the plural.
+
+**Always verify before you write the script:**
+```bash
+python3 -c "
+from diagrams.azure.network import *
+import diagrams.azure.network as mod
+names = [n for n in dir(mod) if not n.startswith('_') and n[0].isupper()]
+print('\n'.join(sorted(names)))
+"
+```
+
 | Azure Service | Module | Class |
 |--------------|--------|-------|
+| Virtual WAN | `diagrams.azure.network` | `VirtualWans` |
+| Virtual Hub | `diagrams.azure.network` | ⚠️ No icon — use `Blank` from generic |
 | Front Door / WAF | `diagrams.azure.network` | `FrontDoors` |
 | App Gateway | `diagrams.azure.network` | `ApplicationGateway` |
 | Azure Firewall | `diagrams.azure.network` | `Firewall` |
-| ExpressRoute | `diagrams.azure.network` | `ExpressrouteCircuits` |
+| ExpressRoute Circuit | `diagrams.azure.network` | `ExpressrouteCircuits` |
+| VPN / ER Gateway | `diagrams.azure.network` | `VirtualNetworkGateways` |
+| VNet | `diagrams.azure.network` | `VirtualNetworks` |
+| Route Table | `diagrams.azure.network` | `RouteTables` |
 | Private Endpoint | `diagrams.azure.network` | `PrivateEndpoint` |
+| Private DNS Zones | `diagrams.azure.network` | `DNSPrivateZones` |
+| Load Balancer | `diagrams.azure.network` | `LoadBalancers` |
 | App Service | `diagrams.azure.compute` | `AppServices` |
 | AKS | `diagrams.azure.compute` | `AKS` |
 | Functions | `diagrams.azure.compute` | `FunctionApps` |
+| Container Instances | `diagrams.azure.compute` | `ContainerInstances` |
+| VM | `diagrams.azure.compute` | `VM` / `VMScaleSets` / `VMSS` |
 | SQL Database | `diagrams.azure.database` | `SQLDatabases` |
 | Cosmos DB | `diagrams.azure.database` | `CosmosDb` |
 | Redis Cache | `diagrams.azure.database` | `CacheForRedis` |
@@ -77,6 +114,7 @@ Some modules have both old and new names (e.g. `diagrams.azure.network` and `dia
 | Event Grid | `diagrams.azure.integration` | `EventGridTopics` |
 | Storage (Blob) | `diagrams.azure.storage` | `BlobStorage` |
 | Key Vault | `diagrams.azure.security` | `KeyVaults` |
+| Management Groups | `diagrams.azure.general` | `Managementgroups` |
 | Entra ID | `diagrams.azure.identity` | `ActiveDirectory` |
 | AI Foundry | `diagrams.azure.ml` | `MachineLearningServiceWorkspaces` |
 | Content Safety | `diagrams.azure.ml` | `CognitiveServices` |
@@ -144,6 +182,39 @@ with Cluster("Hub Network", graph_attr={
 | Security | `#fb7185` (rose) | Security/monitoring |
 | CI/CD | `#22d3ee` (cyan) | DevOps |
 | Non-Prod | `#a78bfa` (violet) | Dev/test/QA |
+
+### Using `Blank` for Text-Only Nodes in Clusters
+
+Some Azure services have no dedicated icon in the `diagrams` library (e.g. Virtual Hub, Firewall Policy, Management Groups). Use `Blank` from `diagrams.generic.blank` as a text-only label:
+
+```python
+from diagrams.generic.blank import Blank
+
+with Cluster("UK South — Primary Region"):
+    hub = Blank("Virtual Hub\nvhub-uks-prod\n10.100.0.0/23")  # text-only placeholder
+    fw = Firewall("Azure Firewall (Premium + IDPS)")
+```
+
+`Blank` renders as a small invisible node that serves as an anchor for edges and shows multi-line text. Use it whenever a component exists in the architecture but doesn't have a library icon.
+
+### Edge Styles for Different Traffic Types
+
+Define separate `Edge` attribute dicts for different traffic types to make the diagram semantically readable:
+
+```python
+edge_inspect  = {"color": "#E81123", "style": "bold", "fontsize": "9"}   # Firewall-inspected traffic
+edge_network  = {"color": "#0078D4", "style": "bold", "fontsize": "9"}   # Direct network flow
+edge_mgmt     = {"color": "#0078D4", "style": "dotted", "fontsize": "9"}  # Management/control plane
+edge_dns      = {"color": "#FF8C00", "style": "dashed", "fontsize": "9"}  # DNS resolution
+
+# Usage:
+hub >> Edge(**edge_inspect, label="Routing Intent") >> fw
+hub >> Edge(**edge_network) >> er
+mgmt >> Edge(**edge_mgmt, label="Policy →") >> vwan
+spoke >> Edge(**edge_dns, label="DNS query") >> dns
+```
+
+This pattern makes diagrams self-documenting: red = inspected, blue = direct, dotted = management, orange/dashed = DNS.
 
 ### Edge Styles
 

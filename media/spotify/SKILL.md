@@ -1,7 +1,7 @@
 ---
 name: spotify
-description: "Spotify: play, search, queue, manage playlists and devices."
-version: 1.0.0
+description: "Spotify: play, search, queue, manage playlists and devices — Hermes tools (primary, 7 tools) and spogo/spotify_player CLI (fallback)."
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -10,12 +10,49 @@ prerequisites:
 metadata:
   hermes:
     tags: [spotify, music, playback, playlists, media]
-    related_skills: [gif-search]
+    related_skills: [gif-search, gifgrep]
 ---
 
-# Spotify
+# Spotify — Hermes Tools + CLI Fallback
 
-Control the user's Spotify account via the Hermes Spotify toolset (7 tools). Setup guide: https://hermes-agent.nousresearch.com/docs/user-guide/features/spotify
+Two ways to control Spotify:
+
+1. **Hermes tools** (7 tools: playback, devices, queue, search, playlists, albums, library) — preferred, works in any session with the toolset loaded
+2. **spogo CLI** (via terminal) — fallback for terminal-only setups where Hermes tools aren't available
+
+For Hermes tools setup: https://hermes-agent.nousresearch.com/docs/user-guide/features/spotify
+
+## CLI Fallback (spogo)
+
+When Hermes Spotify tools aren't available (terminal-only session), use `spogo`:
+
+```bash
+# Requirements: Spotify Premium, spogo installed (brew install spogo)
+spogo auth import --browser chrome  # import cookies
+
+# Search and play
+spogo search track "miles davis kind of blue"
+spogo play
+spogo pause | next | prev
+spogo status
+
+# Device management
+spogo device list
+spogo device set "<device-name>"
+```
+
+### Alternative: spotify_player
+
+If spogo isn't available:
+
+```bash
+spotify_player search "query"
+spotify_player playback play|pause|next|previous
+spotify_player connect
+spotify_player like
+```
+
+Config: `~/.config/spotify-player/app.toml`
 
 ## When to use this skill
 
