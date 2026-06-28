@@ -1,0 +1,617 @@
+{
+  "jobs": [
+    {
+      "id": "d66fa995aba8",
+      "name": "Weekly Gateway Restart",
+      "prompt": "Restart the Hermes gateway systemd service. Run: systemctl --user restart hermes-gateway. If there are errors, report them. Otherwise just confirm the restart succeeded and the service is active.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 4 * * 0",
+        "display": "0 4 * * 0"
+      },
+      "schedule_display": "0 4 * * 0",
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-25T16:54:37.637380+01:00",
+      "next_run_at": "2026-06-28T04:00:00+01:00",
+      "last_run_at": null,
+      "last_status": null,
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": [
+        "terminal"
+      ],
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "d71172e385be",
+      "name": "DeepSeek cost + anomaly monitor",
+      "prompt": "Daily DeepSeek API balance check. Report current balance and alert if low.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "deepseek-monitor.py",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * *",
+        "display": "0 9 * * *"
+      },
+      "schedule_display": "0 9 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 24
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T12:49:00.744694+01:00",
+      "next_run_at": "2026-06-26T09:00:00+01:00",
+      "last_run_at": "2026-06-25T09:00:30.998156+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "7fea7151888b",
+      "name": "Weekly Cloud Architecture Pattern",
+      "prompt": "Generate a weekly cloud architecture pattern and save it to /home/matth/code/cloud-architecture/patterns/.\n\n1. Run the script /home/matth/.hermes/scripts/pick-pattern-topic.sh to get the topic for this week. It prints the topic to stdout.\n\n2. Using the topic, write a comprehensive enterprise cloud architecture pattern as a markdown file in /home/matth/code/cloud-architecture/patterns/. Follow the style and quality of the existing patterns in that directory \u2014 Mermaid diagrams, cost tables, pitfalls sections, az CLI commands, Terraform snippets, RACI sections where relevant, and a \"constraints\" footer.\n\n3. Save the file as patterns/{slugified-topic-name}.md using lowercase-kebab-case for the filename.\n\n4. Update /home/matth/code/cloud-architecture/patterns/README.md with a table of contents entry pointing to the new pattern (create README.md if it doesn't exist).\n\n5. Commit and push:\n   cd /home/matth/code/cloud-architecture && git add -A && git commit -m \"docs: add new architecture pattern\" && git push origin main\n\nThe git remote uses SSH (git@github.com:monty72/cloud-architecture.git) and the SSH key is already configured at ~/.ssh/id_ed25519. No GitHub token needed \u2014 use SSH auth only.\n\nThis is a scheduled cron job \u2014 no user is present. Do your work, commit and push, and include the topic name and file path in your final response so the user knows what was created.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * 1",
+        "display": "0 9 * * 1"
+      },
+      "schedule_display": "0 9 * * 1",
+      "repeat": {
+        "times": null,
+        "completed": 5
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T17:00:10.563656+01:00",
+      "next_run_at": "2026-06-29T09:00:00+01:00",
+      "last_run_at": "2026-06-15T09:05:08.115869+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": [
+        "terminal",
+        "file",
+        "web"
+      ],
+      "workdir": "/home/matth/code/cloud-architecture",
+      "profile": null
+    },
+    {
+      "id": "4bacee394b24",
+      "name": "hermes-full-backup",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "hermes-backup.sh",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 4 * * 0",
+        "display": "0 4 * * 0"
+      },
+      "schedule_display": "0 4 * * 0",
+      "repeat": {
+        "times": null,
+        "completed": 3
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T18:48:34.887528+01:00",
+      "next_run_at": "2026-06-28T04:00:00+01:00",
+      "last_run_at": "2026-06-21T04:00:47.524414+01:00",
+      "last_status": "error",
+      "last_error": "Script exited with code 1\nstderr:\ntar: .hermes/gateway.pid: File removed before we read it\ntar: .hermes: file changed as we read it\nstdout:\n=== Hermes Backup 20260621-040017 ===\n>>> Pushing skills to GitHub...\n[master dd46a58] Auto-backup 20260621-040017\n 115 files changed, 6862 insertions(+), 155 deletions(-)\n rename {apple => .archive}/apple-notes/SKILL.md (100%)\n rename {apple => .archive}/apple-reminders/SKILL.md (100%)\n rename {autonomous-ai-agents => .archive}/claude-code/SKILL.md (100%)\n rename {github => .archive}/codebase-inspection/SKILL.md (100%)\n rename {autonomous-ai-agents => .archive}/codex/SKILL.md (100%)\n create mode 100644 .archive/digital-product-authoring/SKILL.md\n create mode 100644 .archive/digital-product-authoring/references/pdf-playbook-pattern.md\n create mode 100644 .archive/digital-product-authoring/references/template-pack-pattern.md\n create mode 100644 .archive/digital-product-business/SKILL.md\n create mode 100644 .archive/digital-product-business/references/digital-products-marketplace-research.md\n create mode 100644 .archive/digital-products-marketplace/SKILL.md\n create mode 100644 .archive/digital-products-marketplace/references/case-studies.md\n create mode 100644 .archive/digital-products-marketplace/references/category-data.md\n create mode 100644 .archive/digital-products-marketplace/references/platform-comparison.md\n rename {apple => .archive}/findmy/SKILL.md (100%)\n rename {media => .archive}/gif-search/SKILL.md (100%)\n rename {github => .archive}/github-auth/SKILL.md (100%)\n rename {github => .archive}/github-auth/scripts/gh-env.sh (100%)\n rename {github => .archive}/github-code-review/SKILL.md (100%)\n rename {github => .archive}/github-code-review/references/review-output-template.md (100%)\n rename {github => .archive}/github-issues/SKILL.md (100%)\n rename {github => .archive}/github-issues/templates/bug-report.md (100%)\n rename {github => .archive}/github-issues/templates/feature-request.md (100%)\n rename {github => .archive}/github-pr-workflow/SKILL.md (100%)\n rename {github => .archive}/github-pr-workflow/references/ci-troubleshooting.md (100%)\n rename {github => .archive}/github-pr-workflow/references/conventional-commits.md (100%)\n rename {github => .archive}/github-pr-workflow/templates/pr-body-bugfix.md (100%)\n rename {github => .archive}/github-pr-workflow/templates/pr-body-feature.md (100%)\n rename {github => .archive}/github-repo-management/SKILL.md (100%)\n rename {github => .archive}/github-repo-management/references/github-api-cheatsheet.md (100%)\n rename {media => .archive}/heartmula/SKILL.md (100%)\n rename {apple => .archive}/imessage/SKILL.md (100%)\n rename {apple => .archive}/macos-computer-use/SKILL.md (100%)\n rename {autonomous-ai-agents => .archive}/opencode/SKILL.md (100%)\n rename {software-development => .archive}/requesting-code-review/SKILL.md (100%)\n rename {software-development => .archive}/simplify-code/SKILL.md (100%)\n rename {media => .archive}/songsee/SKILL.md (100%)\n rename {creative => .archive}/songwriting-and-ai-music/SKILL.md (100%)\n rename {software-development => .archive}/spike/SKILL.md (100%)\n rename {media => .archive}/spotify-player/SKILL.md (100%)\n rename {software-development => .archive}/systematic-debugging/SKILL.md (100%)\n rename {software-development => .archive}/test-driven-development/SKILL.md (100%)\n create mode 100644 .curator_backups/2026-06-14T13-00-36Z/cron-jobs.json\n create mode 100644 .curator_backups/2026-06-14T13-00-36Z/manifest.json\n create mode 100644 .curator_backups/2026-06-14T13-00-36Z/skills.tar.gz\n create mode 100644 autonomous-ai-agents/autonomous-coding-agents/SKILL.md\n create mode 100644 autonomous-ai-agents/autonomous-coding-agents/references/claude-code.md\n create mode 100644 autonomous-ai-agents/autonomous-coding-agents/references/codex.md\n create mode 100644 autonomous-ai-agents/autonomous-coding-agents/references/opencode.md\n create mode 100644 creative/azure-architecture-diagrams/references/vwan-multi-region.py\n rename {.archive => creative}/creative/content-site-builder/SKILL.md (100%)\n rename {.archive => creative}/creative/content-site-builder/references/curated-product-guide.md (100%)\n rename {.archive => creative}/creative/content-site-builder/references/data-research-patterns.md (100%)\n rename {.archive => creative}/creative/content-site-builder/references/deployed-chatbot-comparison-data.md (100%)\n rename {.archive => creative}/creative/content-site-builder/references/svg-design-guide.md (100%)\n rename {.archive => devops}/devops/hermes-backup/SKILL.md (100%)\n rename {.archive => devops}/devops/hermes-backup/scripts/hermes-backup.sh (100%)\n rename {.archive => devops}/devops/provider-usage-tracking/SKILL.md (100%)\n rename {.archive => devops}/devops/provider-usage-tracking/references/deepseek-session-trace.md (100%)\n rename {.archive => devops}/devops/provider-usage-tracking/references/deepseek-v4-models.md (100%)\n rename {.archive => devops}/devops/provider-usage-tracking/scripts/deepseek-cost-monitor.py (100%)\n rename {.archive => devops}/devops/system-architecture-documentation/SKILL.md (100%)\n rename {.archive => devops}/devops/system-architecture-documentation/references/montygroup-full-architecture-2026-05.md (100%)\n create mode 100644 devops/static-site-deployment/references/cloudflare-pages-direct-upload.md\n rename {.archive => email}/email/automated-email-sending/SKILL.md (100%)\n rename {.archive => email}/email/automated-email-sending/references/session-setup.md (100%)\n rename {.archive => email}/email/automated-email-sending/scripts/hermes-email.py (100%)\n create mode 100644 media/music-creation/SKILL.md\n create mode 100644 media/music-creation/references/heartmula.md\n create mode 100644 media/music-creation/references/songsee.md\n create mode 100644 media/music-creation/references/songwriting-and-ai-music.md\n rename {.archive => mlops}/mlops/ollama-server/SKILL.md (100%)\n create mode 100644 productivity/digital-products/SKILL.md\n create mode 100644 productivity/digital-products/references/digital-product-business.md\n create mode 100644 productivity/digital-products/references/product-authoring.md\n rename {.archive => productivity}/productivity/uk-retail-research/SKILL.md (100%)\n create mode 100644 research/market-research/SKILL.md\n rename {.archive => security}/security/web-app-security-hardening/SKILL.md (100%)\n create mode 100644 software-development/astro-product-page/SKILL.md\n create mode 100644 software-development/astro-product-page/references/product-suite-session.md\n create mode 100644 software-development/cloud-architecture-authoring/references/afd-frontdoor-session.md\n create mode 100644 software-development/cloud-architecture-authoring/references/diagrams-library-quirks.md\n create mode 100644 software-development/cloud-architecture-authoring/references/vwan-session.md\n create mode 100644 software-development/github/references/ci-troubleshooting.md\n create mode 100644 software-development/github/references/conventional-commits.md\n create mode 100644 software-development/github/references/github-api-cheatsheet.md\n create mode 100644 software-development/github/references/github-auth.md\n create mode 100644 software-development/github/references/github-code-review.md\n create mode 100644 software-development/github/references/github-issues.md\n create mode 100644 software-development/github/references/github-pr-workflow.md\n create mode 100644 software-development/github/references/github-repo-management.md\n create mode 100644 software-development/github/references/review-output-template.md\n create mode 100644 software-development/github/templates/bug-report.md\n create mode 100644 software-development/github/templates/feature-request.md\n create mode 100644 software-development/github/templates/pr-body-bugfix.md\n create mode 100644 software-development/github/templates/pr-body-feature.md\n rename {.archive => software-development}/software-development/site-design-unification/SKILL.md (100%)\n create mode 100644 software-development/software-quality/SKILL.md\n create mode 100644 software-development/software-quality/references/codebase-inspection.md\n create mode 100644 software-development/software-quality/references/requesting-code-review.md\n create mode 100644 software-development/software-quality/references/simplify-code.md\n create mode 100644 software-development/software-quality/references/spike.md\n create mode 100644 software-development/software-quality/references/systematic-debugging.md\n create mode 100644 software-development/software-quality/references/test-driven-development.md\nTo https://github.com/monty72/hermes-skills.git\n   cc34239..dd46a58  master -> master\n>>> Creating tarball...",
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "63676d10b38b",
+      "name": "HA Energy Sensors Bridge",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "ha_energy_bridge.py",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 1,
+        "display": "every 1m"
+      },
+      "schedule_display": "every 1m",
+      "repeat": {
+        "times": null,
+        "completed": 25598
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T19:42:31.072941+01:00",
+      "next_run_at": "2026-06-25T09:50:30.657150+01:00",
+      "last_run_at": "2026-06-25T09:49:30.657150+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "5e9d0516fa7f",
+      "name": "OpenCrawl skills sync",
+      "prompt": "Sync the main Hermes agent skills to the OpenCrawl worker VM. Run: rsync -az --delete ~/.hermes/skills/ matth@192.168.1.137:~/.hermes-worker-skills/main/\n\nDo NOT report success. Only report if the sync fails.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 5 * * *",
+        "display": "0 5 * * *"
+      },
+      "schedule_display": "0 5 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 24
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T21:07:55.420033+01:00",
+      "next_run_at": "2026-06-26T05:00:00+01:00",
+      "last_run_at": "2026-06-20T05:03:33.651018+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "a7b7eb84d6c3",
+      "name": "Observability snapshot",
+      "prompt": "Run the observability data collector to gather metrics from both the main Hermes agent and the OpenCrawl worker VM (192.168.1.137). Exec: python3 ~/.hermes/scripts/observability-collect.py. Silent if successful \u2014 only report if the collector fails.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "observability-collect.py",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
+      "schedule_display": "every 5m",
+      "repeat": {
+        "times": null,
+        "completed": 5748
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T21:26:09.983903+01:00",
+      "next_run_at": "2026-06-25T09:54:30.554505+01:00",
+      "last_run_at": "2026-06-25T09:43:35.231815+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "d2e56666b946",
+      "name": "MC Server Watchdog",
+      "prompt": "Run the watchdog script at ~/.hermes/scripts/mc-watchdog.sh and report if the server was restarted.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
+      "schedule_display": "every 5m",
+      "repeat": {
+        "times": null,
+        "completed": 5779
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T23:02:41.871134+01:00",
+      "next_run_at": "2026-06-25T09:54:30.560298+01:00",
+      "last_run_at": "2026-06-25T09:43:35.565988+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "ae7a1b7d6991",
+      "name": "Daily Digest - Morning Briefing",
+      "prompt": "You are posting to the #daily-digest channel on Discord. Create a concise daily digest covering the morning briefing. Include:\n1. The current date and time\n2. Any notable items from the past 24 hours\n3. A brief system health update (check hermes gateway status or any recent logs)\n\nKeep it to 3-5 bullet points, friendly but professional tone. Sign off as \"\ud83e\udd16 Hermes\"",
+      "skills": [
+        "autonomous-ai-agents/hermes-agent"
+      ],
+      "skill": "autonomous-ai-agents/hermes-agent",
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 7 * * *",
+        "display": "0 7 * * *"
+      },
+      "schedule_display": "0 7 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 23
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T23:52:02.160602+01:00",
+      "next_run_at": "2026-06-26T07:00:00+01:00",
+      "last_run_at": "2026-06-20T07:09:16.286403+01:00",
+      "last_status": "error",
+      "last_error": "RuntimeError: [Errno 32] Broken pipe",
+      "last_delivery_error": null,
+      "deliver": "discord:1508964446582734848:1508965699823997069",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "d4ec27bfba25",
+      "name": "notes-index-updater",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "notes-index-updater.py",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 180,
+        "display": "every 180m"
+      },
+      "schedule_display": "every 180m",
+      "repeat": {
+        "times": null,
+        "completed": 180
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-26T23:56:07.997451+01:00",
+      "next_run_at": "2026-06-25T11:50:29.105091+01:00",
+      "last_run_at": "2026-06-21T01:35:16.965582+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "541ff201ccf6",
+      "name": "Facebook iPad fix check",
+      "prompt": "Search the web for any news that Meta has released a new Facebook iPad app update to fix the iPadOS 26.1 crashing/search issues. If you find reports of a fix being released, summarise what was fixed and when. Also check Reddit (r/facebook, r/iPadOS) and Apple Community discussions for user reports of the fix. If no fix has been released yet, just say \"Still broken - no fix yet.\" Keep it brief.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 4320,
+        "display": "every 4320m"
+      },
+      "schedule_display": "every 4320m",
+      "repeat": {
+        "times": null,
+        "completed": 6
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-27T22:52:52.751843+01:00",
+      "next_run_at": "2026-06-28T08:50:29.105091+01:00",
+      "last_run_at": "2026-06-19T13:10:13.601422+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": [
+        "web"
+      ],
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "b9b984cfca01",
+      "name": "Daily Platform Thinking",
+      "prompt": "You are Matt Hogarth's daily platform thinking assistant. Your job is to produce ONE sharp, current, actionable thought about the Royal Mail cloud platform.\n\nToday is {date}. This is a new session \u2014 you have no prior context beyond what you can gather.\n\n## Your task\n1. Read the cloud-architecture repo (/home/matth/code/cloud-architecture/) \u2014 especially the roadmap, recent ADRs, escalations FAQ, and any recently modified docs\n2. Check the observability snapshot at ~/.hermes/data/observability.json for current platform health\n3. Think about ONE thing that's worth Matt's attention today \u2014 something topical, actionable, and specific to his role as Head of Cloud Architecture\n\n## What \"a thinking item\" looks like\n- A pattern emerging from recent decisions\n- A risk that's forming (cost creep, policy gap, tech debt)\n- An opportunity to unblock a vertical\n- A framework gap worth addressing\n- An industry shift that impacts the platform decision tree\n- Something from observability data worth investigating\n\n## Format\nReturn exactly this structure:\n\n\ud83d\ude80 **Today's Thinking Item: {short title}**\n\n**What it is:** 2-3 sentences describing the observation.\n\n**Why it matters today:** How this connects to Matt's roadmap, team capacity, or a specific vertical's needs.\n\n**One action if relevant:** A single specific action or decision to make (or explicitly \"Just awareness \u2014 no action needed\").\n\n**Source:** Where you found this (which doc, metric, or pattern).\n\nDo NOT produce a generic newsletter. This must be specific and current. If nothing stands out, say so honestly rather than inventing padding.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 7 * * *",
+        "display": "0 7 * * *"
+      },
+      "schedule_display": "0 7 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 20
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-29T22:26:09.782805+01:00",
+      "next_run_at": "2026-06-26T07:00:00+01:00",
+      "last_run_at": "2026-06-20T07:07:21.254896+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": [
+        "file",
+        "web",
+        "terminal"
+      ],
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "b50d79fd0df0",
+      "name": "Patio Lights - Sun Control",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": "patio_lights.py",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 15,
+        "display": "every 15m"
+      },
+      "schedule_display": "every 15m",
+      "repeat": {
+        "times": null,
+        "completed": 1804
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-05-30T13:44:35.325497+01:00",
+      "next_run_at": "2026-06-25T09:50:30.501084+01:00",
+      "last_run_at": "2026-06-25T09:35:30.501084+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "11f6f19bed4f",
+      "name": "cloud-tools-idea-scout",
+      "prompt": "Monitor for new product opportunities in cloud architecture / platform engineering / developer tools space. \n\nResearch the following sources and compile a report of actionable ideas:\n1. **Product Hunt** \u2014 Check what's trending in 'developer-tools', 'productivity', 'design-tools' categories. Look for tools/saas/templates that solve real problems for cloud architects.\n2. **Hacker News** \u2014 What cloud/infra/devops posts are trending? What pain points are people discussing?\n3. **Reddit** \u2014 Check r/azure, r/devops, r/cloudcomputing, r/kubernetes, r/backstage for the most common questions, complaints, and \"I wish there was a tool that...\" posts.\n4. **GitHub Trending** \u2014 What repos are trending in the cloud/devops space?\n5. **Gumroad/Product trends** \u2014 What types of cloud/dev templates and tools are selling? Look at categories like Notion templates for engineers, developer toolkits, architecture templates.\n\nFor each idea found, write it up with:\n- **Idea name** \u2014 Short title\n- **Problem it solves** \u2014 What pain point?\n- **Target audience** \u2014 Who would buy it?\n- **Estimated price point** \u2014 What could it sell for?\n- **Monetization model** \u2014 One-time sale, subscription, or both?\n- **My ability to build it** \u2014 Can I (Hermes) build this for Matt?\n- **First-mover advantage** \u2014 Is this crowded or open?\n\nFocus on ideas that:\n- Can be built by an AI agent (templates, guides, spreadsheets, code starters, calculators)\n- Leverage Matt's cloud architecture expertise\n- Have a clear target audience willing to pay\n- Minimal to zero ongoing cost to maintain\n\nPriority score each idea as:\n- \ud83d\udd25 HOT \u2014 Launch this week\n- \ud83d\udc4d WARM \u2014 Launch this month\n- \ud83d\udca4 COLD \u2014 Keep in backlog\n\nGive a summary verdict on the most promising new idea at the top.",
+      "skills": [
+        "brave-web-search"
+      ],
+      "skill": "brave-web-search",
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 8 * * 1",
+        "display": "0 8 * * 1"
+      },
+      "schedule_display": "0 8 * * 1",
+      "repeat": {
+        "times": null,
+        "completed": 1
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-06-14T07:14:07.551688+01:00",
+      "next_run_at": "2026-06-29T08:00:00+01:00",
+      "last_run_at": "2026-06-15T08:03:56.957734+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "origin",
+      "origin": {
+        "platform": "telegram",
+        "chat_id": "6234911743",
+        "chat_name": "Matt Hogarth",
+        "thread_id": null
+      },
+      "enabled_toolsets": null,
+      "workdir": null
+    }
+  ],
+  "updated_at": "2026-06-25T09:49:30.657311+01:00"
+}

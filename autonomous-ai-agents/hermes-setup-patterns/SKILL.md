@@ -496,7 +496,7 @@ if total_prompt:
 
 ### Proactive Cost Monitoring (Cron-Based)
 
-Set up a no-agent watchdog cron that checks provider balances daily and alerts when thresholds are crossed. See the `scripts/deepseek-cost-monitor.py` reference from the archived `provider-usage-tracking` skill for a full implementation.
+Set up a no-agent watchdog cron that checks provider balances daily and alerts when thresholds are crossed. A full implementation with 7-day history, spend spike detection, and auto-escalation lives at `scripts/deepseek-cost-monitor.py`.
 
 Register as:
 ```json

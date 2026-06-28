@@ -1,9 +1,9 @@
 {
-  "last_report_path": "/home/matth/.hermes/logs/curator/20260614-130036",
-  "last_run_at": "2026-06-14T13:00:36.154962+00:00",
-  "last_run_duration_seconds": 379.114621,
-  "last_run_summary": "auto: no changes; llm: All umbrella skills verified. Here's the final report.\n\n---\n\n## Curator Summary\n\n### Clusters Processed\n\n1. **Apple/Mac unsupported (5 skills → all pruned):** `apple-notes`, `apple-reminders`, `imessage`, `findmy`, `macos-computer-use` — al…\narchived 26 skill(s):\n  • apple-notes — pruned (stale)\n  • apple-reminders — pruned (stale)\n  • claude-code — pruned (stale)\n  • codebase-inspection — pruned (stale)\n  • codex — pruned (stale)\n  • digital-product-authoring — pruned (stale)\n  • digital-product-business — pruned (stale)\n  • digital-products-marketplace — pruned (stale)\n  • findmy — pruned (stale)\n  • gif-search — pruned (stale)\n  … and 16 more\nfull report: hermes curator status",
+  "last_report_path": "/home/matth/.hermes/logs/curator/20260625-084930",
+  "last_run_at": "2026-06-25T08:49:30.639379+00:00",
+  "last_run_duration_seconds": 407.216245,
+  "last_run_summary": "auto: no changes; llm: Now let me write the comprehensive summary with the structured YAML block.\n\n---\n\n## Curator Consolidation Summary\n\n### Clusters Processed\n\n**1. Hermes operational umbrella** → `hermes-setup-patterns`\n- `hermes-backup` — fully absorbed (its …\narchived 38 skill(s):\n  • automated-email-sending → cloudflare-dns-management\n  • azure-architecture-diagrams → architecture-diagram\n  • content-site-builder → uk-resource-hub-builder\n  • hermes-backup → hermes-setup-patterns\n  • provider-usage-tracking → hermes-setup-patterns\n  • site-design-unification → uk-resource-hub-builder\n  • system-architecture-documentation → cloud-architecture-authoring\n  • uk-retail-research → uk-energy-research\n  • web-app-security-hardening → static-site-deployment\n  • airtable — pruned (stale)\n  … and 28 more\nfull report: hermes curator status\nkeep an umbrella stable: hermes curator pin architecture-diagram",
   "last_run_summary_shown_at": "2026-06-07T12:52:12.304999+00:00",
   "paused": false,
-  "run_count": 3
+  "run_count": 4
 }

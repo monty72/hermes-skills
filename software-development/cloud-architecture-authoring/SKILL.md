@@ -1023,6 +1023,7 @@ When `git reset --hard origin/main` was accidentally used and destroyed staged c
 - `references/jetstream-waf-session.md` — Output reference for the JetStream on AVS vs native Azure/GCP messaging pattern (MSG-001) and its WAF alignment assessment. Covers self-managed vs managed service comparison pattern, companion reference architecture diagrams, WAF assessment structure, and sustainability as the consistently weakest pillar. Also includes the migration path pattern (dual-write → cutover → decommission).
 - `references/vwan-session.md` — Output reference for the Azure Virtual WAN hub pattern (VWAN-001) and its CAF/WAF governance policy blueprint (CAF-POL-002). Covers the paired artefact pattern applied to networking infrastructure, diagram regeneration workflow after region changes, the `diagrams` Python library import quirks (v0.25.1), and Private Endpoint DNS resolution as the #1 gotcha in vWAN.
 - `references/diagrams-library-quirks.md` — Quick-reference table of all `diagrams` (v0.25.1) import names that differ from expected Azure service names. Covers 20+ imports, nonexistent modules, Edge() kwarg gotchas, and diagram verification tips.
+- `references/system-architecture-documentation.md` — Full workflow for documenting an existing running system (ARCHITECTURE.md, LLD.md, dark-themed SVG diagram). Covers parallel subagent state gathering, document structure templates, and commit workflow. Use when the task is recording *what's running*, not defining *how to build*.
 
 ## Scripts
 

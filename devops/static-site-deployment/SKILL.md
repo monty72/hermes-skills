@@ -693,7 +693,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Post-Deployment Security Hardening
 
-After a site is live, run this systematic audit to check for common exposures. See the archived `web-app-security-hardening` skill for the full reference with detailed CLI commands.
+After a site is live, run this systematic audit to check for common exposures. See `references/web-app-security-hardening.md` for the full reference with detailed CLI commands.
 
 ### Phase 1: Reconnaissance
 

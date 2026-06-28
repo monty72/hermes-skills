@@ -193,7 +193,7 @@ See `references/email-dns-records.md` for the full guide. Key points:
 - MX records point at `mx1.email.cloudflare.net` / `mx2.email.cloudflare.net` (priority 10 and 20) — but the dashboard auto-adds `route1/2/3.mx.cloudflare.net` with different priorities
 - SPF record: `v=spf1 include:_spf.email.cloudflare.net ~all` (manual) or `v=spf1 include:_spf.mx.cloudflare.net ~all` (auto-added by dashboard)
 - **Email Routing requires dashboard activation** — DNS:Edit token alone cannot enable it
-- For sending emails from a custom domain, you need a separate SMTP relay. See `references/gmail-smtp-relay.md` for the Gmail SMTP + App Password approach (relay from hermes@montygroup.uk through any Gmail account).
+- For sending emails from a custom domain, you need a separate SMTP relay. See `references/automated-email-sending.md` for the complete guide, or `references/gmail-smtp-relay.md` for the minimal pattern.
 
 ## Working with Zones
 

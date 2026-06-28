@@ -248,3 +248,8 @@ The following scripts are bundled with this skill for regenerating or modifying 
 - `scripts/azure-landing-zone.py` — Full Azure Landing Zone for UK regulated enterprise (hub, prod spoke, non-prod, management, CI/CD)
 - `scripts/azure-key-vault.py` — Azure Key Vault enterprise reference architecture (management plane, data plane, workloads, lifecycle)
 
+## Reference Files
+
+- `references/azure-architecture-diagrams.md` — Dedicated Python `diagrams` library guide with exhaustive import tables (100+ cloud services across Azure, GCP, AWS), cluster color conventions for dark themes, known import mismatches, and layout optimization for complex diagrams. Includes `Blank` node pattern for services without dedicated icons.
+- `references/drawio-file-manipulation.md` — Programmatic modification of diagrams.net (.drawio) files via XML injection. Covers file format (compressed/uncompressed, multi-page), cell types (vertex/edge), style properties, injection technique with Python, ID generation, and validation. Use when the user needs to add nodes/edges/flow paths to an existing drawio diagram without opening the GUI, or for automated diagram generation from templates.
+

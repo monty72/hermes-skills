@@ -15,12 +15,23 @@ if command -v gh &>/dev/null && gh auth status &>/dev/null; then
   echo "AUTH_METHOD=gh"
 else
   echo "AUTH_METHOD=curl"
-  # Extract token from common locations
+  # Extract token from common locations (check vault first, then .env, then git-credentials)
   if [ -z "$GITHUB_TOKEN" ]; then
-    _env="${HERMES_HOME:-$HOME/.hermes}/.env"
-    [ -f "$_env" ] && grep -q "^GITHUB_TOKEN=" "$_env" && export GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" "$_env" | head -1 | cut -d= -f2 | tr -d '\n\r')
-    [ -z "$GITHUB_TOKEN" ] && grep -q "github.com" ~/.git-credentials 2>/dev/null && \
-      export GITHUB_TOKEN=$(grep "github.com" ~/.git-credentials | head -1 | sed 's|https://[^:]*:\([^@]*\)@.*|\1|')
+    # 1. Try hermes-vault (best for this user)
+    if command -v hermes-vault &>/dev/null; then
+      export GITHUB_TOKEN=$(hermes-vault get GITHUB_TOKEN 2>/dev/null)
+    fi
+    # 2. Try .env
+    if [ -z "$GITHUB_TOKEN" ]; then
+      _env="${HERMES_HOME:-$HOME/.hermes}/.env"
+      [ -f "$_env" ] && grep -q "^GITHUB_TOKEN=" "$_env" && \
+        export GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" "$_env" | head -1 | cut -d= -f2 | tr -d '\\n\\r')
+    fi
+    # 3. Try git-credentials
+    if [ -z "$GITHUB_TOKEN" ]; then
+      [ -f ~/.git-credentials ] && grep -q "github.com" ~/.git-credentials 2>/dev/null && \
+        export GITHUB_TOKEN=$(grep "github.com" ~/.git-credentials | head -1 | sed 's|https://[^:]*:\\([^@]*\\)@.*|\\1|')
+    fi
   fi
 fi
 
@@ -122,6 +133,32 @@ gh repo edit --description "..." --visibility public
 gh release create v1.0.0 --generate-notes
 gh secret set API_KEY --body "value"
 ```
+
+### Pitfall: `gh` Token Stale / Invalid
+
+If `gh auth status` reports a failed login, `gh repo create` and other `gh api` calls fail with `HTTP 401`. Don't spend time re-authenticating `gh` (it needs a browser/device flow):
+
+```bash
+# WRONG — needs interactive browser flow:
+gh auth login -h github.com
+
+# RIGHT — use vault token via curl for API, SSH for git push:
+
+# 1. Create repo via API with vault token
+GITHUB_TOKEN=*** get GITHUB_TOKEN)
+curl -s -X POST \
+  -H "Authorization: token "$GITHUB_TOKEN"" \
+  -H "Accept: application/vnd.github.v3+json" \
+  https://api.github.com/user/repos \
+  -d '{"name":"repo-name","private":true,"description":"optional desc","auto_init":false}'
+# Returns {"full_name": "owner/repo", ...} on success
+
+# 2. Push via SSH (no token needed)
+git init
+git remote add origin git@github.com:owner/repo-name.git
+git push -u origin main
+```
+
 
 ## 6. Pre-Commit Verification
 
